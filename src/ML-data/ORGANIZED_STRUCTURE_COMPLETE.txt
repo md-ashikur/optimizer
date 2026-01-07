@@ -1,0 +1,191 @@
+╔══════════════════════════════════════════════════════════════════╗
+║           ML-DATA FULLY ORGANIZED STRUCTURE                      ║
+║              All Files Moved and Categorized                     ║
+╚══════════════════════════════════════════════════════════════════╝
+
+✅ COMPLETE ORGANIZATION - ALL FILES MOVED
+
+1️⃣  1_Raw_Data/
+    ├── All thesis data - labeled.csv (Original dataset)
+    └── README.md
+
+2️⃣  2_Processed_Data/
+    ├── eda_analysis/
+    │   ├── basic_describe.csv
+    │   ├── correlation_matrix.csv
+    │   ├── data_minmax_scaled.csv
+    │   ├── data_standard_scaled.csv
+    │   ├── label_counts.csv
+    │   ├── mean_median_stats.csv
+    │   ├── outliers_count.csv
+    │   ├── per_label_means.csv
+    │   └── tld_label_counts.csv
+    └── shap_analysis/
+
+3️⃣  3_Scripts/
+    ├── data_preparation/
+    │   ├── clean_csv.py
+    │   ├── impute_csv.py
+    │   └── eda_and_label.py
+    ├── model_training/
+    │   ├── train_models.py
+    │   ├── train_classifiers.py
+    │   └── tune_classifiers.py
+    └── evaluation/
+        ├── evaluate_models.py
+        ├── visualize_metrics.py
+        ├── generate_report.py
+        ├── api_predict.py
+        └── MetricsData.ipynb
+
+4️⃣  4_Trained_Models/
+    ├── regression_models/
+    │   ├── model_rf.joblib
+    │   ├── model_lgbm.joblib
+    │   ├── model_keras.h5
+    │   └── scaler.joblib
+    ├── classification_models/
+    │   ├── label_tertiles_rf.joblib
+    │   ├── label_tertiles_lgbm.joblib
+    │   ├── label_tertiles_keras.h5
+    │   ├── label_tertiles_scaler.joblib
+    │   ├── label_weighted_rf.joblib
+    │   ├── label_weighted_lgbm.joblib
+    │   ├── label_weighted_keras.h5
+    │   ├── label_weighted_scaler.joblib
+    │   ├── label_kmeans_rf.joblib
+    │   ├── label_kmeans_lgbm.joblib ⭐ BEST
+    │   ├── label_kmeans_keras.h5
+    │   └── label_kmeans_scaler.joblib
+    └── tuned_models/
+        ├── lgb_best.joblib
+        ├── lgb_search_best_params.json
+        ├── rf_best.joblib
+        ├── rf_search_best_params.json
+        ├── pr_lgb.png
+        ├── pr_rf.png
+        ├── roc_lgb.png
+        └── roc_rf.png
+
+5️⃣  5_Results/
+    ├── metrics/
+    │   ├── evaluation_summary.csv (Main results file)
+    │   ├── classification_summary.json
+    │   ├── best_models_per_strategy.json
+    │   ├── classification_metrics/
+    │   │   ├── label_kmeans_keras_metrics.json
+    │   │   ├── label_kmeans_lgbm_metrics.json
+    │   │   ├── label_kmeans_rf_metrics.json
+    │   │   ├── label_tertiles_keras_metrics.json
+    │   │   ├── label_tertiles_lgbm_metrics.json
+    │   │   ├── label_tertiles_rf_metrics.json
+    │   │   ├── label_weighted_keras_metrics.json
+    │   │   ├── label_weighted_lgbm_metrics.json
+    │   │   └── label_weighted_rf_metrics.json
+    │   ├── accuracy/
+    │   │   ├── evaluation_sorted_by_accuracy.csv
+    │   │   ├── RandomForest/
+    │   │   │   └── RandomForest_accuracy.csv
+    │   │   ├── LightGBM/
+    │   │   │   └── LightGBM_accuracy.csv
+    │   │   └── Keras/
+    │   │       └── Keras_accuracy.csv
+    │   ├── precision_macro/
+    │   │   ├── evaluation_sorted_by_precision_macro.csv
+    │   │   ├── RandomForest/
+    │   │   │   └── RandomForest_precision_macro.csv
+    │   │   ├── LightGBM/
+    │   │   │   └── LightGBM_precision_macro.csv
+    │   │   └── Keras/
+    │   │       └── Keras_precision_macro.csv
+    │   ├── recall_macro/
+    │   │   ├── evaluation_sorted_by_recall_macro.csv
+    │   │   ├── RandomForest/
+    │   │   │   └── RandomForest_recall_macro.csv
+    │   │   ├── LightGBM/
+    │   │   │   └── LightGBM_recall_macro.csv
+    │   │   └── Keras/
+    │   │       └── Keras_recall_macro.csv
+    │   └── f1_macro/
+    │       ├── evaluation_sorted_by_f1_macro.csv
+    │       ├── RandomForest/
+    │       │   └── RandomForest_f1_macro.csv
+    │       ├── LightGBM/
+    │       │   └── LightGBM_f1_macro.csv
+    │       └── Keras/
+    │           └── Keras_f1_macro.csv
+    ├── reports/
+    │   ├── training_summary.json
+    │   ├── feature_importances.csv
+    │   ├── keras_history.json
+    │   └── report.pdf
+    └── confusion_matrices/
+        ├── confusion_label_tertiles_rf.png
+        ├── confusion_label_tertiles_lgbm.png
+        ├── confusion_label_tertiles_keras.png
+        ├── confusion_label_weighted_rf.png
+        ├── confusion_label_weighted_lgbm.png
+        ├── confusion_label_weighted_keras.png
+        ├── confusion_label_kmeans_rf.png
+        ├── confusion_label_kmeans_lgbm.png
+        └── confusion_label_kmeans_keras.png
+
+6️⃣  6_Visualizations/
+    ├── README.md
+    ├── accuracy_comparison.png
+    ├── precision_macro_comparison.png
+    ├── recall_macro_comparison.png
+    ├── f1_macro_comparison.png
+    ├── accuracy_individual_bars.png
+    ├── precision_macro_individual_bars.png
+    ├── recall_macro_individual_bars.png
+    ├── f1_macro_individual_bars.png
+    ├── all_metrics_heatmap.png
+    ├── model_comparison_radar.png
+    ├── performance_summary_report.txt
+    └── models/
+        ├── RandomForest/
+        │   ├── RandomForest_all_metrics.csv
+        │   └── RandomForest_summary.json
+        ├── LightGBM/
+        │   ├── LightGBM_all_metrics.csv
+        │   └── LightGBM_summary.json
+        └── Keras/
+            ├── Keras_all_metrics.csv
+            └── Keras_summary.json
+
+7️⃣  7_Documentation/
+    ├── MetricsData.ipynb
+    └── original_README.md
+
+��� Root Documentation:
+    ├── README.md
+    ├── FOLDER_STRUCTURE.md
+    ├── QUICK_REFERENCE.txt
+    └── ORGANIZED_STRUCTURE_COMPLETE.txt (this file)
+
+═══════════════════════════════════════════════════════════════════
+
+��� QUICK ACCESS PATHS:
+
+Best Model:
+  4_Trained_Models/classification_models/label_kmeans_lgbm.joblib
+
+All Metrics:
+  5_Results/metrics/evaluation_summary.csv
+
+Model-Specific Metrics:
+  5_Results/metrics/accuracy/LightGBM/LightGBM_accuracy.csv
+  5_Results/metrics/precision_macro/LightGBM/LightGBM_precision_macro.csv
+  5_Results/metrics/recall_macro/LightGBM/LightGBM_recall_macro.csv
+  5_Results/metrics/f1_macro/LightGBM/LightGBM_f1_macro.csv
+
+Visualizations:
+  6_Visualizations/all_metrics_heatmap.png
+  6_Visualizations/model_comparison_radar.png
+
+═══════════════════════════════════════════════════════════════════
+Total Files Organized: 100+
+Status: ✅ COMPLETE
+Date: January 7, 2026
+═══════════════════════════════════════════════════════════════════

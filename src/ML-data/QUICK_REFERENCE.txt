@@ -1,0 +1,134 @@
+╔══════════════════════════════════════════════════════════════════╗
+║          ML-DATA FOLDER - QUICK REFERENCE CARD                   ║
+║                  For Thesis Presentation                         ║
+╚══════════════════════════════════════════════════════════════════╝
+
+📋 START HERE: Read "README.md" for complete documentation
+🗺️  VISUAL MAP: See "FOLDER_STRUCTURE.md" for full tree view
+
+┌──────────────────────────────────────────────────────────────────┐
+│ NUMBERED FOLDERS (Follow the ML Workflow)                       │
+└──────────────────────────────────────────────────────────────────┘
+
+1️⃣  1_Raw_Data/
+    ↳ Original dataset (1167 rows, labeled)
+    ✓ "All thesis data - labeled.csv"
+
+2️⃣  2_Processed_Data/
+    ↳ Cleaned data + EDA results
+    ✓ eda_analysis/ (correlations, distributions, outliers)
+    ✓ shap_analysis/ (model interpretability)
+
+3️⃣  3_Scripts/
+    ↳ Python code for entire pipeline
+    ✓ data_preparation/ (clean, impute, analyze)
+    ✓ model_training/ (train, tune models)
+    ✓ evaluation/ (evaluate, visualize, generate reports)
+
+4️⃣  4_Trained_Models/
+    ↳ All saved models (.joblib, .h5)
+    ✓ regression_models/ (RF, LightGBM, Keras)
+    ✓ classification_models/ (9 models: 3 strategies × 3 types)
+    ⭐ BEST: label_kmeans_lgbm.joblib (98.47% F1)
+
+5️⃣  5_Results/
+    ↳ All metrics, reports, confusion matrices
+    ✓ metrics/ (evaluation_summary.csv + sorted by each metric)
+    ✓ reports/ (training details, feature importance)
+    ✓ confusion_matrices/ (9 PNG images)
+
+6️⃣  6_Visualizations/
+    ↳ Charts for presentation (300 DPI)
+    ✓ 4 comparison charts (accuracy, precision, recall, F1)
+    ✓ 4 detailed bar charts (sorted rankings)
+    ✓ Heatmap + Radar chart (comprehensive views)
+    ✓ models/ (RandomForest & LightGBM summaries)
+
+7️⃣  7_Documentation/
+    ↳ Notebooks and original docs
+    ✓ MetricsData.ipynb
+    ✓ original_README.md
+
+┌──────────────────────────────────────────────────────────────────┐
+│ THESIS SUPERVISOR PRESENTATION - TOP 5 FILES                    │
+└──────────────────────────────────────────────────────────────────┘
+
+1. 📊 5_Results/metrics/evaluation_summary.csv
+   → All model performance in one table
+
+2. 📈 6_Visualizations/all_metrics_heatmap.png
+   → Visual comparison of all models/metrics
+
+3. 🎯 6_Visualizations/model_comparison_radar.png
+   → Best models radar chart
+
+4. 📝 6_Visualizations/performance_summary_report.txt
+   → Text summary with rankings
+
+5. 🏆 6_Visualizations/models/LightGBM/LightGBM_summary.json
+   → Best model details (98.47% F1-score)
+
+┌──────────────────────────────────────────────────────────────────┐
+│ BEST MODEL RESULTS                                               │
+└──────────────────────────────────────────────────────────────────┘
+
+Model:      LightGBM
+Strategy:   K-means Clustering Labeling
+Location:   4_Trained_Models/classification_models/
+
+Performance:
+  ✓ Accuracy:  97.86%
+  ✓ Precision: 98.40%
+  ✓ Recall:    98.53%
+  ✓ F1-Score:  98.47% ⭐
+
+File: label_kmeans_lgbm.joblib
+Scaler: label_kmeans_scaler.joblib
+
+┌──────────────────────────────────────────────────────────────────┐
+│ MODEL NAMING CONVENTION                                          │
+└──────────────────────────────────────────────────────────────────┘
+
+Format: label_{STRATEGY}_{MODEL}.{ext}
+
+STRATEGIES:
+  • tertiles  - Split by 33rd/66th percentiles
+  • weighted  - Weighted composite (emphasizes LCP, TTI)
+  • kmeans    - Clustering-based (BEST PERFORMER)
+
+MODELS:
+  • rf        - Random Forest
+  • lgbm      - LightGBM
+  • keras     - Neural Network
+
+Examples:
+  ✓ label_kmeans_lgbm.joblib    ← Best classifier
+  ✓ label_tertiles_rf.joblib    ← RF with tertile labels
+  ✓ label_weighted_keras.h5     ← Keras with weighted labels
+
+┌──────────────────────────────────────────────────────────────────┐
+│ FILE TYPE GUIDE                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+.csv    → Data tables (can open in Excel)
+.json   → Structured summaries (readable text)
+.png    → Charts/images (300 DPI, presentation-ready)
+.joblib → Scikit-learn/LightGBM models (Python)
+.h5     → Keras/TensorFlow models (Python)
+.txt    → Text reports
+.ipynb  → Jupyter notebooks
+.py     → Python scripts
+
+┌──────────────────────────────────────────────────────────────────┐
+│ BACKUP & SAFETY                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+✓ ALL ORIGINAL FILES preserved in "Code/" folder
+✓ New organized structure does NOT delete anything
+✓ Both structures exist side-by-side
+✓ Safe to use either structure
+
+╔══════════════════════════════════════════════════════════════════╗
+║  🎓 Ready for thesis presentation!                               ║
+║  All files organized, labeled, and documented.                   ║
+╚══════════════════════════════════════════════════════════════════╝

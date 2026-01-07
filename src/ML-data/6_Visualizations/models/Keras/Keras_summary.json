@@ -1,0 +1,10 @@
+{
+  "model_name": "Keras",
+  "best_strategy": "label_tertiles",
+  "metrics": {
+    "accuracy": 0.97008547008547,
+    "precision_macro": 0.9702184235517568,
+    "recall_macro": 0.97008547008547,
+    "f1_macro": 0.9699131386145816
+  }
+}
