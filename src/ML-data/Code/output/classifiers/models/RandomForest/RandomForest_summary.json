@@ -1,0 +1,10 @@
+{
+  "model_name": "RandomForest",
+  "best_strategy": "label_kmeans",
+  "metrics": {
+    "accuracy": 0.9658119658119658,
+    "precision_macro": 0.974287236877165,
+    "recall_macro": 0.9768160326670964,
+    "f1_macro": 0.9754949170679508
+  }
+}

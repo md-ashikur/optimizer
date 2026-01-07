@@ -1,0 +1,10 @@
+{
+  "model_name": "LightGBM",
+  "best_strategy": "label_kmeans",
+  "metrics": {
+    "accuracy": 0.9786324786324786,
+    "precision_macro": 0.9840021401819156,
+    "recall_macro": 0.985332043842682,
+    "f1_macro": 0.9846526060411096
+  }
+}

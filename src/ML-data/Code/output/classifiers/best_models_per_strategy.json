@@ -1,0 +1,14 @@
+{
+  "label_tertiles": {
+    "best_model": "keras",
+    "f1_macro": 0.9699131386145815
+  },
+  "label_weighted": {
+    "best_model": "keras",
+    "f1_macro": 0.9657522505623772
+  },
+  "label_kmeans": {
+    "best_model": "lgbm",
+    "f1_macro": 0.9846526060411095
+  }
+}

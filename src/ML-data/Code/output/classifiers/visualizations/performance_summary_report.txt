@@ -1,0 +1,41 @@
+================================================================================
+MODEL PERFORMANCE COMPARISON REPORT
+================================================================================
+
+OVERALL BEST MODEL:
+  Model: LightGBM
+  Strategy: label_kmeans
+  Accuracy: 0.9786
+  Precision: 0.9840
+  Recall: 0.9853
+  F1-Score: 0.9847
+
+--------------------------------------------------------------------------------
+PERFORMANCE BY MODEL TYPE:
+--------------------------------------------------------------------------------
+
+LightGBM:
+  Best Strategy: label_kmeans
+  Accuracy: 0.9786
+  Precision: 0.9840
+  Recall: 0.9853
+  F1-Score: 0.9847
+  Average across strategies:
+    Accuracy: 0.9608
+    Precision: 0.9626
+    Recall: 0.9631
+    F1-Score: 0.9627
+
+RandomForest:
+  Best Strategy: label_kmeans
+  Accuracy: 0.9658
+  Precision: 0.9743
+  Recall: 0.9768
+  F1-Score: 0.9755
+  Average across strategies:
+    Accuracy: 0.9551
+    Precision: 0.9584
+    Recall: 0.9588
+    F1-Score: 0.9581
+
+================================================================================

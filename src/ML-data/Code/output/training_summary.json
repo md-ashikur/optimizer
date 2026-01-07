@@ -1,0 +1,71 @@
+{
+  "tree_results": {
+    "rf": {
+      "mae": 185807.4249491719,
+      "rmse": 1277758.8905452068,
+      "per_target": {
+        "Largest_contentful_paint_LCP_ms": {
+          "mae": 3326.8211748548288,
+          "rmse": 7920.221459066131
+        },
+        "Cumulative_Layout_Shift_CLS": {
+          "mae": 733739.6949166246,
+          "rmse": 2555488.4555390715
+        },
+        "First_Contentful_Paint_FCP_ms": {
+          "mae": 150.75556720944445,
+          "rmse": 539.7505363005206
+        },
+        "Time_to_interactive_TTI_ms": {
+          "mae": 6012.42813799872,
+          "rmse": 9319.969806958776
+        }
+      }
+    },
+    "lgbm": {
+      "mae": 190320.48870355973,
+      "rmse": 1085288.8647458153,
+      "per_target": {
+        "Largest_contentful_paint_LCP_ms": {
+          "mae": 3836.8253152534826,
+          "rmse": 7102.787488463627
+        },
+        "Cumulative_Layout_Shift_CLS": {
+          "mae": 750739.1511865068,
+          "rmse": 2170547.355883224
+        },
+        "First_Contentful_Paint_FCP_ms": {
+          "mae": 318.5173891680385,
+          "rmse": 871.4396018692123
+        },
+        "Time_to_interactive_TTI_ms": {
+          "mae": 6387.46092331057,
+          "rmse": 8980.347226122694
+        }
+      }
+    }
+  },
+  "keras_results": {
+    "mae": 204530.29922252666,
+    "rmse": 1392463.052583003,
+    "per_target": {
+      "target_0": {
+        "mae": 8270.032200264026,
+        "rmse": 12189.768804720234
+      },
+      "target_1": {
+        "mae": 788616.06866853,
+        "rmse": 2784798.5258389823
+      },
+      "target_2": {
+        "mae": 2872.0503600158445,
+        "rmse": 4349.375555944131
+      },
+      "target_3": {
+        "mae": 18363.04566129691,
+        "rmse": 23303.952216119957
+      }
+    }
+  },
+  "shap_generated": true
+}
