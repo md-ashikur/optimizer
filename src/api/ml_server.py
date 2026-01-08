@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import json
 from typing import Dict, Any
+import os
 
 app = FastAPI(title="WebOptimizer ML API")
 
@@ -26,18 +27,59 @@ app.add_middleware(
 )
 
 # Load the best model (LightGBM with K-means labeling)
-MODEL_DIR = Path(__file__).parent.parent / 'ML-data' / '4_Trained_Models' / 'classification_models'
-MODEL_PATH = MODEL_DIR / 'label_kmeans_lgbm.joblib'
-SCALER_PATH = MODEL_DIR / 'label_kmeans_scaler.joblib'
+MODEL_DIR = Path(__file__).parent.parent / 'ML-data'
+# possible model locations (project contains multiple outputs during training)
+KERAS_CANDIDATES = [
+    MODEL_DIR / 'Code' / 'output' / 'model_keras.h5',
+    MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_kmeans_keras.h5',
+    MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_tertiles_keras.h5',
+]
+SCALER_CANDIDATES = [
+    MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_kmeans_scaler.joblib',
+    MODEL_DIR / 'Code' / 'output' / 'scaler.joblib',
+]
 
-try:
-    model = joblib.load(MODEL_PATH)
-    scaler = joblib.load(SCALER_PATH)
-    print(f"✅ Model loaded successfully from {MODEL_PATH}")
-except Exception as e:
-    print(f"❌ Error loading model: {e}")
-    model = None
-    scaler = None
+model = None
+scaler = None
+model_type = None
+
+# Try to load Keras model first
+for kp in KERAS_CANDIDATES:
+    if kp.exists():
+        try:
+            # Lazy import tensorflow to avoid import if not needed
+            from tensorflow.keras.models import load_model
+            model = load_model(str(kp))
+            model_type = 'keras'
+            print(f"Model loaded successfully from {kp} (Keras)")
+            break
+        except Exception as e:
+            print(f"Error loading Keras model at {kp}: {e}")
+
+# If Keras not available, fall back to joblib LightGBM
+if model is None:
+    LGBM_CANDIDATES = [
+        MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_kmeans_lgbm.joblib',
+    ]
+    for lp in LGBM_CANDIDATES:
+        if lp.exists():
+            try:
+                model = joblib.load(lp)
+                model_type = 'lgbm'
+                print(f"Model loaded successfully from {lp} (joblib)")
+                break
+            except Exception as e:
+                print(f"Error loading joblib model at {lp}: {e}")
+
+# Load scaler if available
+for sp in SCALER_CANDIDATES:
+    if sp.exists():
+        try:
+            scaler = joblib.load(sp)
+            print(f"Scaler loaded from {sp}")
+            break
+        except Exception as e:
+            print(f"Error loading scaler at {sp}: {e}")
 
 LABEL_ORDER = ['Good', 'Average', 'Weak']
 
@@ -64,20 +106,20 @@ def run_lighthouse(url: str) -> Dict[str, float]:
             '--chrome-flags="--headless"',
             '--quiet'
         ]
-        
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=120
         )
-        
+
         if result.returncode != 0:
             raise Exception(f"Lighthouse failed: {result.stderr}")
-        
+
         data = json.loads(result.stdout)
         audits = data.get('audits', {})
-        
+
         # Extract metrics
         metrics = {
             'Largest_contentful_paint_LCP_ms': audits.get('largest-contentful-paint', {}).get('numericValue', 0),
@@ -89,14 +131,14 @@ def run_lighthouse(url: str) -> Dict[str, float]:
             'Max_Potential_FID_ms': audits.get('max-potential-fid', {}).get('numericValue', 0),
             'Server_Response_Time_ms': audits.get('server-response-time', {}).get('numericValue', 0),
         }
-        
+
         # Add derived metrics (using averages if not available)
         metrics.update({
             'DOM_Content_Loaded_ms': metrics['First_Contentful_Paint_FCP_ms'] * 1.2,
             'First_Meaningful_Paint_ms': metrics['Largest_contentful_paint_LCP_ms'] * 0.8,
             'Fully_Loaded_Time_ms': metrics['Time_to_interactive_TTI_ms'] * 1.1,
-            'Total_Page_Size_KB': 1500.0,  # Default, would need separate check
-            'Number_of_Requests': 50,  # Default
+            'Total_Page_Size_KB': 1500.0,
+            'Number_of_Requests': 50,
             'JavaScript_Size_KB': 500.0,
             'CSS_Size_KB': 100.0,
             'Image_Size_KB': 800.0,
@@ -105,12 +147,13 @@ def run_lighthouse(url: str) -> Dict[str, float]:
             'Main_Thread_Work_ms': metrics['Total_Blocking_Time_TBT_ms'] * 2,
             'Bootup_Time_ms': metrics['Time_to_interactive_TTI_ms'] * 0.3,
         })
-        
+
         return metrics
-        
+
     except Exception as e:
         print(f"Error running Lighthouse: {e}")
-        # Return mock data for development
+        print("Falling back to mock metrics for development. Install Lighthouse CLI for real metrics: npm install -g lighthouse")
+        # Return mock metrics for development when Lighthouse not available
         return get_mock_metrics()
 
 def get_mock_metrics() -> Dict[str, float]:
@@ -192,25 +235,42 @@ def health_check():
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
     if model is None or scaler is None:
-        raise HTTPException(status_code=500, detail="Model not loaded")
+        raise HTTPException(status_code=500, detail="Model or scaler not loaded. Ensure models are available and dependencies (tensorflow/sklearn) are installed.")
     
     try:
         # Get metrics from Lighthouse
         metrics = run_lighthouse(request.url)
-        
+
         # Prepare features
         features = prepare_features(metrics)
-        
+
         # Scale features
         features_scaled = scaler.transform(features)
-        
-        # Make prediction
-        prediction_idx = model.predict(features_scaled)[0]
-        prediction_proba = model.predict_proba(features_scaled)[0]
-        
-        # Get label
-        predicted_label = LABEL_ORDER[prediction_idx]
-        confidence = float(prediction_proba[prediction_idx])
+
+        # Make prediction depending on model type
+        if model_type == 'keras':
+            # Keras expects float32
+            features_in = features_scaled.astype('float32')
+            proba = model.predict(features_in)
+            proba = np.asarray(proba).reshape(-1)
+            prediction_idx = int(np.argmax(proba))
+            prediction_proba = proba
+            predicted_label = LABEL_ORDER[prediction_idx]
+            confidence = float(proba[prediction_idx])
+        else:
+            # joblib model (LightGBM or sklearn)
+            prediction_idx = model.predict(features_scaled)[0]
+            # Some sklearn models provide predict_proba
+            if hasattr(model, 'predict_proba'):
+                prediction_proba = model.predict_proba(features_scaled)[0]
+            else:
+                # Fallback: one-hot based on prediction
+                probs = np.zeros(len(LABEL_ORDER), dtype=float)
+                probs[int(prediction_idx)] = 1.0
+                prediction_proba = probs
+
+            predicted_label = LABEL_ORDER[int(prediction_idx)]
+            confidence = float(prediction_proba[int(prediction_idx)])
         
         return PredictionResponse(
             metrics=metrics,

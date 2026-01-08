@@ -39,10 +39,10 @@ def load_model():
             import joblib
             model = joblib.load(MODEL_PATH)
             scaler = joblib.load(SCALER_PATH)
-            print(f"✅ Model loaded successfully")
+            print("Model loaded successfully")
         except Exception as e:
-            print(f"⚠️ Model loading failed: {e}")
-            print("📝 Using mock predictions")
+            print(f"Model loading failed: {e}")
+            print("Using mock predictions")
     return model, scaler
 
 class PredictionRequest(BaseModel):

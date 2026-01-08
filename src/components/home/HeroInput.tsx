@@ -8,14 +8,14 @@ import { useAnalysisStore } from '@/store/analysis.store';
 export default function HeroInput() {
   const [url, setUrl] = useState('');
   const router = useRouter();
-  const { setUrl: setStoreUrl, setAnalyzing } = useAnalysisStore();
+  const { setUrl: setStoreUrl } = useAnalysisStore();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) return;
 
     setStoreUrl(url);
-    setAnalyzing(true);
+    // Do not set analyzing here — dashboard should start analysis on mount
     router.push('/dashboard');
   };
 

@@ -1,56 +1,145 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PerformanceMetrics, PerformanceIssue } from '@/types/performance';
+
+type Prediction = {
+  label: string;
+  confidence?: number;
+  [key: string]: unknown;
+};
+
+type PythonRaw = {
+  metrics?: PerformanceMetrics;
+  prediction?: Prediction;
+  [key: string]: unknown;
+};
+
+function isPythonResponse(obj: unknown): obj is PythonRaw {
+  return typeof obj === 'object' && obj !== null && 'metrics' in (obj as object) && 'prediction' in (obj as object);
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { url } = await request.json();
-
-    if (!url) {
-      return NextResponse.json(
-        { error: 'URL is required' },
-        { status: 400 }
-      );
+    console.log('Received analysis request');
+    let url: string | undefined;
+    // Read the raw body once and parse manually to avoid "body already read" errors
+    const rawBody = await request.text();
+    try {
+      const parsed = rawBody ? JSON.parse(rawBody) : {};
+      url = parsed?.url;
+      console.log('URL to analyze:', url);
+      if (!url) {
+        return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+      }
+    } catch (err) {
+      console.error('Failed to parse JSON body:', err, 'raw body:', rawBody);
+      return NextResponse.json({ error: 'Invalid JSON in request body', raw: rawBody }, { status: 400 });
     }
 
-    // Call Python ML prediction service
+    // Call Python ML prediction service with fallbacks (localhost -> 127.0.0.1)
     const pythonApiUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8000';
-    
-    const response = await fetch(`${pythonApiUrl}/predict`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url }),
-    });
+    console.log('Calling Python API, primary URL:', pythonApiUrl);
 
-    if (!response.ok) {
-      throw new Error('ML prediction failed');
+    const candidates: string[] = [pythonApiUrl];
+    if (pythonApiUrl.includes('localhost')) {
+      candidates.push(pythonApiUrl.replace('localhost', '127.0.0.1'));
     }
 
-    const data = await response.json();
+    let data: unknown = null;
+    let lastError: string | null = null;
+    for (const candidate of candidates) {
+      try {
+        console.log('Attempting Python service at:', candidate);
+        const resp = await fetch(`${candidate}/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+
+        const respText = await resp.text();
+        console.log('Response from', candidate, 'status:', resp.status, 'length:', respText?.length ?? 0);
+
+        // If response is not OK, attempt to parse structured JSON error payload
+        if (!resp.ok) {
+          let parsedErr: unknown = null;
+          try {
+            parsedErr = respText ? JSON.parse(respText) : null;
+          } catch (e) {
+            // leave parsedErr null
+          }
+
+          const detail = (typeof parsedErr === 'object' && parsedErr !== null && ('detail' in parsedErr || 'error' in parsedErr))
+            ? ((parsedErr as Record<string, unknown>)['detail'] ?? (parsedErr as Record<string, unknown>)['error'])
+            : respText;
+          lastError = `Endpoint ${candidate} returned ${resp.status}: ${detail}`;
+          console.error(lastError);
+          continue; // try next candidate
+        }
+
+        try {
+          data = respText ? JSON.parse(respText) : {};
+        } catch (err) {
+          lastError = `Failed to parse JSON from ${candidate}: ${String(err)} -- raw: ${respText}`;
+          console.error(lastError);
+          continue; // try next candidate
+        }
+
+        const keys = typeof data === 'object' && data !== null ? Object.keys(data as Record<string, unknown>) : [];
+        console.log('Received prediction data keys from', candidate, ':', keys);
+        lastError = null;
+        break; // success
+      } catch (err) {
+        lastError = `Error calling ${candidate}: ${String(err)}`;
+        console.error(lastError);
+        continue;
+      }
+    }
+
+    if (!data) {
+      return NextResponse.json({ error: 'Failed to call Python service', detail: lastError }, { status: 502 });
+    }
 
     // Generate recommendations based on metrics and prediction
-    const recommendations = generateRecommendations(data.metrics, data.prediction.label);
-    const issues = identifyIssues(data.metrics);
-    const score = calculateScore(data.metrics);
+    if (!isPythonResponse(data)) {
+      console.error('Python response missing expected fields or has unexpected shape:', data);
+      return NextResponse.json({ error: 'Python response missing metrics or prediction', data }, { status: 502 });
+    }
 
-    return NextResponse.json({
+    const metrics = data.metrics as PerformanceMetrics;
+    const prediction = data.prediction as Prediction;
+
+    let recommendations: string[] = [];
+    let issues = [];
+    let score = 0;
+    try {
+      recommendations = generateRecommendations(metrics, prediction.label);
+      issues = identifyIssues(metrics);
+      score = calculateScore(metrics);
+    } catch (err) {
+      console.error('Error while processing prediction data:', err);
+      return NextResponse.json({ error: 'Failed to process prediction data', detail: String(err) }, { status: 500 });
+    }
+
+    const result = {
       url,
       metrics: data.metrics,
       prediction: data.prediction,
       recommendations,
       issues,
       score,
-    });
+    };
+
+    console.log('Sending final result');
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Analysis error:', error);
     return NextResponse.json(
-      { error: 'Failed to analyze website' },
+      { error: error instanceof Error ? error.message : 'Failed to analyze website' },
       { status: 500 }
     );
   }
 }
 
-function generateRecommendations(metrics: any, label: string): string[] {
+function generateRecommendations(metrics: PerformanceMetrics, label: string): string[] {
   const recommendations: string[] = [];
 
   if (metrics.Largest_contentful_paint_LCP_ms > 2500) {
@@ -113,8 +202,8 @@ function generateRecommendations(metrics: any, label: string): string[] {
   return recommendations;
 }
 
-function identifyIssues(metrics: any) {
-  const issues: any[] = [];
+function identifyIssues(metrics: PerformanceMetrics): PerformanceIssue[] {
+  const issues: PerformanceIssue[] = [];
 
   // High severity issues
   if (metrics.Largest_contentful_paint_LCP_ms > 4000) {
@@ -198,7 +287,7 @@ function identifyIssues(metrics: any) {
   return issues;
 }
 
-function calculateScore(metrics: any): number {
+function calculateScore(metrics: PerformanceMetrics): number {
   // Weighted scoring based on Core Web Vitals importance
   let score = 100;
 

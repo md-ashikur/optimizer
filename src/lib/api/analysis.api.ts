@@ -59,7 +59,10 @@ export async function analyzeWebsite(
         throw new Error('Analysis timed out. Please try again.');
       }
       if (error.response) {
-        throw new Error(error.response.data?.error || error.message || 'Analysis failed');
+        const resp = error.response;
+        const body = resp.data as any;
+        const message = body?.error ?? body?.detail ?? (typeof body === 'string' ? body : JSON.stringify(body || {}));
+        throw new Error(`${message} (status ${resp.status})`);
       }
       if (error.request) {
         throw new Error('No response from server. Is the ML server running?');
