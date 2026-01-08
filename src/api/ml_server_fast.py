@@ -134,7 +134,7 @@ def read_root():
 
 @app.get("/health")
 def health_check():
-    # Try to load model if not loaded
+    # load model if not loaded
     m, s = load_model()
     return {
         "status": "healthy",
