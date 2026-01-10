@@ -1,0 +1,50 @@
+
+SHAP EXPLAINABILITY ANALYSIS REPORT
+================================================================================
+
+DATASET INFORMATION:
+- Total Samples: 1167
+- Training Samples: 933
+- Test Samples: 234
+- Features: 22
+
+TOP 10 MOST IMPORTANT FEATURES:
+ Importance_Rank                         Feature  Mean_Abs_SHAP  Percentage
+               1                 composite_score         0.7252       100.0
+               2                Response_time_ms         0.0000         0.0
+               3      DOM_Content_Loaded_Time_ms         0.0000         0.0
+               4              First_byte_TTFB_ms         0.0000         0.0
+               5                     Total_links         0.0000         0.0
+               6                    Load_time_ms         0.0000         0.0
+               7                  No_of_requests         0.0000         0.0
+               8                   Byte_in_bytes         0.0000         0.0
+               9 Largest_contentful_paint_LCP_ms         0.0000         0.0
+              10                    Page_size_MB         0.0000         0.0
+
+KEY INSIGHTS:
+1. The top 3 features contribute 100.0% of total importance
+2. Top feature: composite_score (100.0% impact)
+3. Feature diversity: Top 10 features span 100.0% of total impact
+
+VISUALIZATIONS GENERATED:
+- SHAP Feature Importance Bar Chart
+- SHAP Beeswarm Plot (distribution of impacts)
+- SHAP Waterfall Plots (individual explanations)
+- SHAP Force Plots (prediction breakdown)
+- SHAP Dependence Plots (top 6 features)
+- SHAP Values Heatmap
+- Custom Top 10 Comparison
+
+OUTPUT LOCATIONS:
+- Visualizations: f:\client\Optimizer\optimizer\src\ML-data\10_Advanced_Visualizations\shap_plots
+- Results: f:\client\Optimizer\optimizer\src\ML-data\9_Advanced_Results\shap_visualizations
+- Models: f:\client\Optimizer\optimizer\src\ML-data\8_Advanced_Models\explainable_ai
+
+USAGE:
+The SHAP explainer can now be used to explain any new prediction by:
+1. Loading the saved explainer
+2. Passing scaled feature values
+3. Interpreting SHAP value contributions
+
+For detailed feature-by-feature impact, see the dependence plots and
+feature importance ranking CSV file.

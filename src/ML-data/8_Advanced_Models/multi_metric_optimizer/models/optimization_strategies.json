@@ -1,0 +1,82 @@
+{
+  "BALANCED": {
+    "name": "Balanced Optimization",
+    "description": "Equal weight to all metrics",
+    "weights": {
+      "LCP": 0.3333333333333333,
+      "FID": 0.3333333333333333,
+      "CLS": 0.3333333333333333
+    },
+    "targets": {
+      "LCP": 2500,
+      "FID": 100,
+      "CLS": 0.1
+    },
+    "use_case": "General-purpose optimization",
+    "expected_improvements": {
+      "LCP": "Moderate improvement (30-50%)",
+      "FID": "Moderate improvement (30-50%)",
+      "CLS": "Moderate improvement (30-50%)"
+    }
+  },
+  "LCP_FOCUSED": {
+    "name": "LCP-Focused Optimization",
+    "description": "Prioritize loading performance",
+    "weights": {
+      "LCP": 0.6,
+      "FID": 0.2,
+      "CLS": 0.2
+    },
+    "targets": {
+      "LCP": 1500,
+      "FID": 150,
+      "CLS": 0.15
+    },
+    "use_case": "Content-heavy sites (blogs, news)",
+    "expected_improvements": {
+      "LCP": "Significant improvement (60-80%)",
+      "FID": "Moderate improvement (20-40%)",
+      "CLS": "Moderate improvement (20-40%)"
+    }
+  },
+  "INTERACTIVITY_FOCUSED": {
+    "name": "Interactivity-Focused Optimization",
+    "description": "Prioritize responsiveness",
+    "weights": {
+      "LCP": 0.2,
+      "FID": 0.6,
+      "CLS": 0.2
+    },
+    "targets": {
+      "LCP": 3000,
+      "FID": 50,
+      "CLS": 0.15
+    },
+    "use_case": "Interactive apps (SPAs, web apps)",
+    "expected_improvements": {
+      "LCP": "Moderate improvement (20-40%)",
+      "FID": "Significant improvement (60-80%)",
+      "CLS": "Moderate improvement (20-40%)"
+    }
+  },
+  "STABILITY_FOCUSED": {
+    "name": "Stability-Focused Optimization",
+    "description": "Prioritize visual stability",
+    "weights": {
+      "LCP": 0.2,
+      "FID": 0.2,
+      "CLS": 0.6
+    },
+    "targets": {
+      "LCP": 3000,
+      "FID": 150,
+      "CLS": 0.05
+    },
+    "use_case": "E-commerce, forms",
+    "expected_improvements": {
+      "LCP": "Moderate improvement (20-40%)",
+      "FID": "Moderate improvement (20-40%)",
+      "CLS": "Significant improvement (60-80%)"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+
+REGRESSION MODELS SUMMARY REPORT
+================================================================================
+
+OBJECTIVE:
+Predict exact values for Core Web Vitals metrics instead of categories
+
+TARGETS TRAINED:
+LCP, FID_INP, CLS
+
+MODELS TRAINED PER TARGET:
+1. Random Forest Regressor
+2. LightGBM Regressor
+3. Gradient Boosting Regressor
+4. Neural Network Regressor
+
+TOTAL MODELS: 12
+
+PERFORMANCE SUMMARY:
+                 RMSE                                         MAE                                      R2                    
+                 mean            min           max           mean            min            max      mean       min       max
+Target                                                                                                                       
+CLS      1.038225e+06  464010.263978  2.118743e+06  317352.273399  118236.234733  744076.670756  0.795783  0.382869  0.970401
+FID_INP  1.605405e+03    1450.311232  1.812077e+03    1073.580182     987.212427    1185.657286  0.537575  0.415909  0.625846
+LCP      5.388823e+03    4653.466871  6.310654e+03    2832.069581    2550.394304    3351.956838  0.742604  0.651239  0.810359
+
+OUTPUT LOCATIONS:
+- Models: f:\client\Optimizer\optimizer\src\ML-data\8_Advanced_Models\regression\models
+- Results: f:\client\Optimizer\optimizer\src\ML-data\9_Advanced_Results\regression_predictions
+- Visualizations: f:\client\Optimizer\optimizer\src\ML-data\10_Advanced_Visualizations\regression_plots
+
+USAGE:
+Each model can predict exact metric values (e.g., LCP = 2453ms)
+instead of categories (Good/Average/Weak).
+
+This provides more precise optimization guidance.

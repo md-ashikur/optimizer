@@ -1,0 +1,94 @@
+{
+  "LCP_OPTIMIZATION": {
+    "triggers": {
+      "Largest_contentful_paint_LCP_ms": {
+        "threshold": 2500,
+        "operator": ">"
+      },
+      "Page_size_MB": {
+        "threshold": 2.0,
+        "operator": ">"
+      }
+    },
+    "recommendations": [
+      "Optimize images: Compress and use modern formats (WebP, AVIF)",
+      "Implement lazy loading for images and iframes",
+      "Reduce server response time (TTFB)",
+      "Remove render-blocking resources",
+      "Preload critical resources"
+    ],
+    "priority": "HIGH"
+  },
+  "FID_OPTIMIZATION": {
+    "triggers": {
+      "Interaction_to_Next_Paint_INP_ms": {
+        "threshold": 200,
+        "operator": ">"
+      },
+      "Time_to_interactive_TTI_ms": {
+        "threshold": 5000,
+        "operator": ">"
+      }
+    },
+    "recommendations": [
+      "Reduce JavaScript execution time",
+      "Break up long-running tasks",
+      "Use web workers for heavy computations",
+      "Implement code splitting",
+      "Defer non-critical JavaScript"
+    ],
+    "priority": "HIGH"
+  },
+  "CLS_OPTIMIZATION": {
+    "triggers": {
+      "Cumulative_Layout_Shift_CLS": {
+        "threshold": 0.1,
+        "operator": ">"
+      }
+    },
+    "recommendations": [
+      "Set explicit dimensions for images and embeds",
+      "Reserve space for ad slots",
+      "Avoid inserting content above existing content",
+      "Use transform animations instead of layout properties",
+      "Preload fonts to avoid FOIT/FOUT"
+    ],
+    "priority": "MEDIUM"
+  },
+  "RESOURCE_OPTIMIZATION": {
+    "triggers": {
+      "No_of_requests": {
+        "threshold": 100,
+        "operator": ">"
+      },
+      "Page_size_MB": {
+        "threshold": 3.0,
+        "operator": ">"
+      }
+    },
+    "recommendations": [
+      "Minimize HTTP requests through bundling",
+      "Implement HTTP/2 or HTTP/3",
+      "Use CDN for static assets",
+      "Enable compression (Gzip/Brotli)",
+      "Remove unused CSS and JavaScript"
+    ],
+    "priority": "MEDIUM"
+  },
+  "CACHING_OPTIMIZATION": {
+    "triggers": {
+      "Response_time_ms": {
+        "threshold": 600,
+        "operator": ">"
+      }
+    },
+    "recommendations": [
+      "Implement browser caching headers",
+      "Use service workers for offline caching",
+      "Implement CDN caching",
+      "Optimize database queries",
+      "Use Redis/Memcached for server-side caching"
+    ],
+    "priority": "LOW"
+  }
+}
