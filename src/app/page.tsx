@@ -7,6 +7,7 @@ import HeroInput from '@/components/home/HeroInput';
 import StatsSection from '@/components/home/StatsSection';
 import FeaturesSection from '@/components/home/FeaturesSection';
 import HowItWorksSection from '@/components/home/HowItWorksSection';
+import AdvancedFeaturesSection from '@/components/home/AdvancedFeaturesSection';
 
 export default function HomePage() {
   return (
@@ -18,6 +19,7 @@ export default function HomePage() {
         <HeroInput />
         <StatsSection />
         <FeaturesSection />
+        <AdvancedFeaturesSection />
         <HowItWorksSection />
       </main>
 

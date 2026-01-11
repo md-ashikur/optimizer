@@ -49,40 +49,56 @@ export async function POST(request: NextRequest) {
     for (const candidate of candidates) {
       try {
         console.log('Attempting Python service at:', candidate);
-        const resp = await fetch(`${candidate}/predict`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-        });
 
-        const respText = await resp.text();
-        console.log('Response from', candidate, 'status:', resp.status, 'length:', respText?.length ?? 0);
+        // Try /predict first (ml_server.py basic), then /api/predict (ml_server_advanced.py)
+        const endpoints = [
+          `${candidate.replace(/\/$/, '')}/predict`
+        ];
 
-        // If response is not OK, attempt to parse structured JSON error payload
-        if (!resp.ok) {
-          let parsedErr: unknown = null;
+        let respText: string | null = null;
+        let parsed: unknown = null;
+        let success = false;
+
+        for (const ep of endpoints) {
           try {
-            parsedErr = respText ? JSON.parse(respText) : null;
+            console.log('Trying endpoint:', ep);
+            const r = await fetch(ep, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url }),
+            });
+
+            const text = await r.text();
+            console.log('Response from', ep, 'status:', r.status, 'length:', text?.length ?? 0);
+
+            if (!r.ok) {
+              console.error(`Endpoint ${ep} returned ${r.status}: ${text}`);
+              continue; // try next endpoint
+            }
+
+            // parse JSON
+            try {
+              parsed = text ? JSON.parse(text) : {};
+              respText = text;
+              success = true;
+              break;
+            } catch (err) {
+              console.error(`Failed to parse JSON from ${ep}:`, err);
+              continue; // try next endpoint
+            }
           } catch (e) {
-            // leave parsedErr null
+            console.error('Request to', ep, 'failed:', e);
+            continue; // try next endpoint
           }
+        }
 
-          const detail = (typeof parsedErr === 'object' && parsedErr !== null && ('detail' in parsedErr || 'error' in parsedErr))
-            ? ((parsedErr as Record<string, unknown>)['detail'] ?? (parsedErr as Record<string, unknown>)['error'])
-            : respText;
-          lastError = `Endpoint ${candidate} returned ${resp.status}: ${detail}`;
+        if (!success) {
+          lastError = `All endpoints for ${candidate} failed or returned non-JSON responses`;
           console.error(lastError);
           continue; // try next candidate
         }
 
-        try {
-          data = respText ? JSON.parse(respText) : {};
-        } catch (err) {
-          lastError = `Failed to parse JSON from ${candidate}: ${String(err)} -- raw: ${respText}`;
-          console.error(lastError);
-          continue; // try next candidate
-        }
-
+        data = parsed;
         const keys = typeof data === 'object' && data !== null ? Object.keys(data as Record<string, unknown>) : [];
         console.log('Received prediction data keys from', candidate, ':', keys);
         lastError = null;

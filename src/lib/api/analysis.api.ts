@@ -32,11 +32,25 @@ export async function analyzeWebsite(
     // Make the analysis request
     onProgress?.(40, 'Running performance audit...');
     console.log('Sending request to /api/analyze with URL:', url);
-    
+
+    // Guard: ensure we send a plain string URL (avoid Window or other circular objects)
+    let payloadUrl: string;
+    if (typeof url === 'string') {
+      payloadUrl = url;
+    } else if (url && typeof url === 'object') {
+      if (typeof (url as any).href === 'string') payloadUrl = (url as any).href;
+      else if (typeof (url as any).url === 'string') payloadUrl = (url as any).url;
+      else {
+        throw new Error('Invalid URL passed to analyzeWebsite — expected string or object with `href`/`url`.');
+      }
+    } else {
+      throw new Error('Invalid URL passed to analyzeWebsite — expected string.');
+    }
+
     const response = await axios.post<AnalysisResult>(
       '/api/analyze',
-      { url },
-      { 
+      { url: payloadUrl },
+      {
         timeout: 90000,
         headers: { 'Content-Type': 'application/json' }
       }
@@ -73,10 +87,28 @@ export async function analyzeWebsite(
 }
 
 export async function checkMLServerHealth(): Promise<boolean> {
-  try {
-    const response = await axios.get('http://localhost:8000/health', { timeout: 3000 });
-    return response.data.status === 'healthy' && response.data.model_loaded;
-  } catch {
-    return false;
+  const candidates: string[] = [];
+  const advancedUrl = process.env.NEXT_PUBLIC_ADVANCED_ML_URL;
+  if (advancedUrl) candidates.push(advancedUrl);
+  candidates.push('http://localhost:8000');
+  // try localhost and 127.0.0.1
+  candidates.push('http://127.0.0.1:8000');
+
+  for (const base of candidates) {
+    try {
+      // Try /health first
+      const health = await axios.get(`${base.replace(/\/$/, '')}/health`, { timeout: 2500 });
+      if (health?.data && (health.data.status === 'healthy' || health.data.models_loaded || health.data.model_loaded)) {
+        return true;
+      }
+      // Fallback to models info
+      const info = await axios.get(`${base.replace(/\/$/, '')}/api/models/info`, { timeout: 2500 }).catch(() => null);
+      if (info && info.data) return true;
+    } catch (err) {
+      // continue trying other candidates
+      continue;
+    }
   }
+
+  return false;
 }

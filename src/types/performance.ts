@@ -43,6 +43,79 @@ export interface PredictionResult {
   };
 }
 
+// SHAP Explanation Types
+export interface ShapFeatureImpact {
+  feature: string;
+  value: number;
+  shap_value: number;
+  impact: number;
+}
+
+export interface ShapExplanation {
+  top_positive: ShapFeatureImpact[];
+  top_negative: ShapFeatureImpact[];
+  most_important: ShapFeatureImpact[];
+}
+
+// Regression Predictions Types
+export interface RegressionPredictions {
+  predicted_lcp_ms: number;
+  predicted_fid_ms: number;
+  predicted_cls: number;
+  confidence?: string;
+}
+
+// Recommendations Types
+export interface CategorizedRecommendations {
+  HIGH: string[];
+  MEDIUM: string[];
+  LOW: string[];
+}
+
+// Optimization Strategy Types
+export interface OptimizationStrategy {
+  name: string;
+  description: string;
+  weights: {
+    LCP: number;
+    FID: number;
+    CLS: number;
+  };
+  targets: {
+    LCP: number;
+    FID: number;
+    CLS: number;
+  };
+  use_case: string;
+  expected_improvements: {
+    LCP: string;
+    FID: string;
+    CLS: string;
+  };
+}
+
+// Advanced Analysis Result (includes all 5 ML features)
+export interface AdvancedAnalysisResult {
+  // Ensemble Classification
+  ensemble_prediction: string;
+  ensemble_confidence: number;
+  voting_prediction: string;
+  stacking_prediction: string;
+  
+  // Regression Predictions
+  regression_predictions: RegressionPredictions;
+  
+  // Intelligent Recommendations
+  recommendations: CategorizedRecommendations;
+  
+  // Optimization Strategy
+  optimization_strategy: string;
+  
+  // SHAP Explanations
+  shap_explanation: ShapExplanation;
+}
+
+// Complete Analysis Result (combines basic + advanced)
 export interface AnalysisResult {
   url: string;
   metrics: PerformanceMetrics;
@@ -50,4 +123,7 @@ export interface AnalysisResult {
   recommendations: string[];
   issues: PerformanceIssue[];
   score: number;
+  
+  // Advanced ML Features (optional for backward compatibility)
+  advanced?: AdvancedAnalysisResult;
 }
