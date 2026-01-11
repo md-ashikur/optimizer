@@ -8,7 +8,7 @@ interface AnalysisStore {
   error: string | null;
   
   setUrl: (url: string) => void;
-  setAnalysisResult: (result: AnalysisResult) => void;
+  setAnalysisResult: (result: AnalysisResult | null) => void;
   setAnalyzing: (isAnalyzing: boolean) => void;
   setError: (error: string | null) => void;
   reset: () => void;

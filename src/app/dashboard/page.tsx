@@ -120,7 +120,7 @@ export default function DashboardPage() {
                       className="py-2 px-3 bg-emerald-600 text-white rounded"
                       onClick={() => {
                         if (!newUrl) return;
-                        setAnalysisResult(null as any);
+                        setAnalysisResult(null);
                         useAnalysisStore.getState().setUrl(newUrl);
                         setShowUrlInput(false);
                         setNewUrl('');
