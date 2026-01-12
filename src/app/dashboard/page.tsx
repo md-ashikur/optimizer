@@ -12,6 +12,7 @@ import ExtraFeaturesPanel from '@/components/dashboard/ExtraFeaturesPanel';
 import LoadingState from '@/components/dashboard/LoadingState';
 import ErrorState from '@/components/dashboard/ErrorState';
 import Header from '@/components/shared/Header';
+import Link from 'next/link';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -26,8 +27,7 @@ export default function DashboardPage() {
     setAnalyzing,
     setError,
   } = useAnalysisStore();
-  const [showUrlInput, setShowUrlInput] = useState(false);
-  const [newUrl, setNewUrl] = useState('');
+
 
   const performAnalysis = useCallback(async (urlOverride?: string) => {
     const target = urlOverride ?? currentUrl;
@@ -44,10 +44,10 @@ export default function DashboardPage() {
       console.log('📡 Checking ML server health...');
       setProgress(5);
       setProgressMessage('Checking ML server...');
-      
+
       const isHealthy = await checkMLServerHealth();
       console.log('✅ ML server health:', isHealthy);
-      
+
       if (!isHealthy) {
         throw new Error('ML server is offline. Please start: python src/api/ml_server_fast.py');
       }
@@ -58,7 +58,7 @@ export default function DashboardPage() {
         setProgress(prog);
         setProgressMessage(msg);
       });
-      
+
       console.log('✨ Analysis complete:', result);
       setAnalysisResult(result);
     } catch (err) {
@@ -108,40 +108,11 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                {showUrlInput ? (
-                  <div className="flex gap-2">
-                    <input
-                      className="px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
-                      placeholder="https://example.com"
-                      value={newUrl}
-                      onChange={(e) => setNewUrl(e.target.value)}
-                    />
-                    <button
-                      className="py-2 px-3 bg-emerald-600 text-white rounded"
-                      onClick={() => {
-                        if (!newUrl) return;
-                        setAnalysisResult(null);
-                        useAnalysisStore.getState().setUrl(newUrl);
-                        setShowUrlInput(false);
-                        setNewUrl('');
-                        performAnalysis(newUrl).catch(() => {});
-                      }}
-                    >
-                      Analyze
-                    </button>
-                    <button className="py-2 px-3 bg-slate-700 text-white rounded" onClick={() => setShowUrlInput(false)}>Cancel</button>
-                  </div>
-                ) : (
-                  <button
-                    className="py-2 px-4 bg-slate-700 text-white rounded hover:bg-slate-600"
-                    onClick={() => {
-                      setNewUrl(analysisResult.url || '');
-                      setShowUrlInput(true);
-                    }}
+                <Link href="/">
+                  <button className="py-2 px-4 bg-slate-700 text-white rounded hover:bg-slate-600"
                   >
                     Analyze another URL
-                  </button>
-                )}
+                  </button></Link>
               </div>
             </div>
           </div>

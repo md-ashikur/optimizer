@@ -14,6 +14,7 @@ import subprocess
 import json
 from typing import Dict, Any
 import os
+import shutil
 
 app = FastAPI(title="WebOptimizer ML API")
 
@@ -95,95 +96,149 @@ def run_lighthouse(url: str) -> Dict[str, float]:
     """
     Run Lighthouse audit on the URL and extract metrics
     """
-    try:
-        # Run Lighthouse CLI
-        cmd = [
-            'lighthouse',
-            str(url),
-            '--output=json',
-            '--output-path=stdout',
-            '--only-categories=performance',
-            '--chrome-flags="--headless"',
-            '--quiet'
-        ]
+    # Determine how to invoke Lighthouse: prefer direct CLI, fallback to npx if available
+    base_cmd = None
+    if shutil.which('lighthouse'):
+        base_cmd = ['lighthouse']
+    elif shutil.which('npx'):
+        base_cmd = ['npx', 'lighthouse']
+    else:
+        raise Exception(
+            "Lighthouse CLI not found. Install it with `yarn global add lighthouse` or `npm install -g lighthouse`, and ensure the global bin is on PATH."
+        )
 
+    cmd = base_cmd + [
+        str(url),
+        '--output=json',
+        '--output-path=stdout',
+        '--only-categories=performance',
+        '--chrome-flags=--headless',
+        '--quiet'
+    ]
+
+    try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=180
         )
+    except FileNotFoundError as fe:
+        raise Exception(
+            "Failed to run Lighthouse: executable not found. Ensure Lighthouse (or npx) is installed and on PATH."
+        ) from fe
+    except Exception as ex:
+        raise Exception(f"Failed to run Lighthouse: {ex}") from ex
 
-        if result.returncode != 0:
-            raise Exception(f"Lighthouse failed: {result.stderr}")
+    if result.returncode != 0:
+        # Provide stderr/stdout for debugging
+        detail = result.stderr or result.stdout or '<no output>'
+        raise Exception(f"Lighthouse exited with code {result.returncode}: {detail}")
 
-        data = json.loads(result.stdout)
-        audits = data.get('audits', {})
+    data = json.loads(result.stdout)
+    audits = data.get('audits', {})
 
-        # Extract metrics
-        metrics = {
-            'Largest_contentful_paint_LCP_ms': audits.get('largest-contentful-paint', {}).get('numericValue', 0),
-            'First_Contentful_Paint_FCP_ms': audits.get('first-contentful-paint', {}).get('numericValue', 0),
-            'Time_to_interactive_TTI_ms': audits.get('interactive', {}).get('numericValue', 0),
-            'Speed_Index_ms': audits.get('speed-index', {}).get('numericValue', 0),
-            'Total_Blocking_Time_TBT_ms': audits.get('total-blocking-time', {}).get('numericValue', 0),
-            'Cumulative_Layout_Shift_CLS': audits.get('cumulative-layout-shift', {}).get('numericValue', 0),
-            'Max_Potential_FID_ms': audits.get('max-potential-fid', {}).get('numericValue', 0),
-            'Server_Response_Time_ms': audits.get('server-response-time', {}).get('numericValue', 0),
-        }
-
-        # Add derived metrics (using averages if not available)
-        metrics.update({
-            'DOM_Content_Loaded_ms': metrics['First_Contentful_Paint_FCP_ms'] * 1.2,
-            'First_Meaningful_Paint_ms': metrics['Largest_contentful_paint_LCP_ms'] * 0.8,
-            'Fully_Loaded_Time_ms': metrics['Time_to_interactive_TTI_ms'] * 1.1,
-            'Total_Page_Size_KB': 1500.0,
-            'Number_of_Requests': 50,
-            'JavaScript_Size_KB': 500.0,
-            'CSS_Size_KB': 100.0,
-            'Image_Size_KB': 800.0,
-            'Font_Size_KB': 50.0,
-            'HTML_Size_KB': 50.0,
-            'Main_Thread_Work_ms': metrics['Total_Blocking_Time_TBT_ms'] * 2,
-            'Bootup_Time_ms': metrics['Time_to_interactive_TTI_ms'] * 0.3,
-        })
-
-        return metrics
-
-    except Exception as e:
-        print(f"Error running Lighthouse: {e}")
-        print("Falling back to mock metrics for development. Install Lighthouse CLI for real metrics: npm install -g lighthouse")
-        # Return mock metrics for development when Lighthouse not available
-        return get_mock_metrics()
-
-def get_mock_metrics() -> Dict[str, float]:
-    """Return mock metrics for testing when Lighthouse is not available"""
-    return {
-        'Largest_contentful_paint_LCP_ms': 2800.0,
-        'First_Contentful_Paint_FCP_ms': 1600.0,
-        'Time_to_interactive_TTI_ms': 4200.0,
-        'Speed_Index_ms': 3100.0,
-        'Total_Blocking_Time_TBT_ms': 350.0,
-        'Cumulative_Layout_Shift_CLS': 0.12,
-        'Max_Potential_FID_ms': 180.0,
-        'Server_Response_Time_ms': 450.0,
-        'DOM_Content_Loaded_ms': 1920.0,
-        'First_Meaningful_Paint_ms': 2240.0,
-        'Fully_Loaded_Time_ms': 4620.0,
-        'Total_Page_Size_KB': 1500.0,
-        'Number_of_Requests': 50,
-        'JavaScript_Size_KB': 500.0,
-        'CSS_Size_KB': 100.0,
-        'Image_Size_KB': 800.0,
-        'Font_Size_KB': 50.0,
-        'HTML_Size_KB': 50.0,
-        'Main_Thread_Work_ms': 700.0,
-        'Bootup_Time_ms': 1260.0,
+    # Extract primary metrics (use 0 if missing)
+    metrics = {
+        'Largest_contentful_paint_LCP_ms': audits.get('largest-contentful-paint', {}).get('numericValue', 0.0),
+        'First_Contentful_Paint_FCP_ms': audits.get('first-contentful-paint', {}).get('numericValue', 0.0),
+        'Time_to_interactive_TTI_ms': audits.get('interactive', {}).get('numericValue', 0.0),
+        'Speed_Index_ms': audits.get('speed-index', {}).get('numericValue', 0.0),
+        'Total_Blocking_Time_TBT_ms': audits.get('total-blocking-time', {}).get('numericValue', 0.0),
+        'Cumulative_Layout_Shift_CLS': audits.get('cumulative-layout-shift', {}).get('numericValue', 0.0),
+        'Max_Potential_FID_ms': audits.get('max-potential-fid', {}).get('numericValue', 0.0),
+        'Server_Response_Time_ms': audits.get('server-response-time', {}).get('numericValue', 0.0),
     }
 
-def prepare_features(metrics: Dict[str, float]) -> np.ndarray:
-    """Prepare features for model prediction"""
-    # Expected feature order (21 features based on training data)
+    # Derived/simple computed metrics
+    metrics.update({
+        'DOM_Content_Loaded_ms': metrics['First_Contentful_Paint_FCP_ms'] * 1.2,
+        'First_Meaningful_Paint_ms': metrics['Largest_contentful_paint_LCP_ms'] * 0.8,
+        'Fully_Loaded_Time_ms': metrics['Time_to_interactive_TTI_ms'] * 1.1,
+        'Main_Thread_Work_ms': metrics['Total_Blocking_Time_TBT_ms'] * 2,
+        'Bootup_Time_ms': metrics['Time_to_interactive_TTI_ms'] * 0.3,
+    })
+
+    # Parse resource-summary for sizes and request counts if available
+    resource_summary = audits.get('resource-summary', {}).get('details', {})
+    total_size_kb = None
+    number_of_requests = None
+    js_kb = css_kb = img_kb = font_kb = html_kb = offscreen_images_kb = 0.0
+
+    # resource-summary may contain "overallSavingsMs" or "items" depending on LH version
+    items = resource_summary.get('items') if isinstance(resource_summary, dict) else None
+    if items and isinstance(items, list):
+        # items contains dicts with label and size in bytes or KB depending on LH version
+        for it in items:
+            label = it.get('label', '').lower()
+            size = it.get('size', 0)
+            # If size seems like bytes (>100000), convert to KB
+            if size > 100000:
+                size_kb = float(size) / 1024.0
+            else:
+                size_kb = float(size)
+
+            if 'script' in label:
+                js_kb += size_kb
+            elif 'image' in label:
+                img_kb += size_kb
+            elif 'stylesheet' in label or 'css' in label:
+                css_kb += size_kb
+            elif 'font' in label:
+                font_kb += size_kb
+            elif 'document' in label or 'html' in label:
+                html_kb += size_kb
+
+    # Some LH versions store totals in resource-summary.summary
+    totals = resource_summary.get('summary') if isinstance(resource_summary, dict) else None
+    if totals and isinstance(totals, dict):
+        total_size_kb = totals.get('totalBytes')
+        number_of_requests = totals.get('requests')
+        if total_size_kb and total_size_kb > 100000:
+            total_size_kb = float(total_size_kb) / 1024.0
+
+    # Fallbacks if not parsed
+    if total_size_kb is None:
+        total_size_kb = js_kb + css_kb + img_kb + font_kb + html_kb
+    if number_of_requests is None:
+        # Try to get from network-requests audit details
+        details = audits.get('network-requests', {}).get('details', {})
+        if isinstance(details, dict):
+            reqs = details.get('items')
+            if isinstance(reqs, list):
+                number_of_requests = len(reqs)
+    if number_of_requests is None:
+        number_of_requests = 0
+
+    # Try to estimate offscreen images size from image entries marked as offscreen in network-requests
+    try:
+        net_items = audits.get('network-requests', {}).get('details', {}).get('items', [])
+        for it in net_items:
+            if it.get('resourceType') == 'Image' and it.get('isOffscreen'):
+                size_b = it.get('transferSize') or 0
+                offscreen_images_kb += float(size_b) / 1024.0
+    except Exception:
+        pass
+
+    metrics.update({
+        'Total_Page_Size_KB': float(total_size_kb),
+        'Number_of_Requests': int(number_of_requests),
+        'JavaScript_Size_KB': float(js_kb),
+        'CSS_Size_KB': float(css_kb),
+        'Image_Size_KB': float(img_kb),
+        'Font_Size_KB': float(font_kb),
+        'HTML_Size_KB': float(html_kb),
+        'Offscreen_Images_KB': float(offscreen_images_kb),
+    })
+
+    return metrics
+
+def prepare_features(metrics: Dict[str, float]) -> pd.DataFrame:
+    """Prepare features for model prediction and return a single-row DataFrame with named columns.
+
+    Returning a DataFrame preserves feature names so the scaler (fitted with feature names)
+    receives consistent columns and order, avoiding warnings and incorrect transforms.
+    """
     feature_names = [
         'Largest_contentful_paint_LCP_ms',
         'First_Contentful_Paint_FCP_ms',
@@ -207,13 +262,10 @@ def prepare_features(metrics: Dict[str, float]) -> np.ndarray:
         'Bootup_Time_ms',
         'Offscreen_Images_KB'
     ]
-    
-    # Create feature array
-    features = []
-    for name in feature_names:
-        features.append(metrics.get(name, 0.0))
-    
-    return np.array(features).reshape(1, -1)
+
+    row = {name: float(metrics.get(name, 0.0)) for name in feature_names}
+    df = pd.DataFrame([row], columns=feature_names)
+    return df
 
 @app.get("/")
 def read_root():
@@ -241,11 +293,19 @@ async def predict(request: PredictionRequest):
         # Get metrics from Lighthouse
         metrics = run_lighthouse(request.url)
 
-        # Prepare features
-        features = prepare_features(metrics)
+        # Prepare features as a named DataFrame so scaler gets correct feature names
+        features_df = prepare_features(metrics)
+
+        # If scaler was fitted with feature names, ensure DataFrame has the same columns/order
+        if hasattr(scaler, 'feature_names_in_'):
+            expected = list(scaler.feature_names_in_)
+            for col in expected:
+                if col not in features_df.columns:
+                    features_df[col] = 0.0
+            features_df = features_df[expected]
 
         # Scale features
-        features_scaled = scaler.transform(features)
+        features_scaled = scaler.transform(features_df)
 
         # Make prediction depending on model type
         if model_type == 'keras':

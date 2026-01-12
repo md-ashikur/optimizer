@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { HiLightningBolt } from 'react-icons/hi';
 
 export default function Header() {
@@ -6,7 +7,7 @@ export default function Header() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <HiLightningBolt className="w-8 h-8 text-purple-400" />
-          <span className="text-2xl font-bold text-white">WebOptimizer AI</span>
+         <Link href="/">WebOptimizer AI</Link>
         </div>
         <nav className="hidden md:flex gap-6">
           <a href="#features" className="text-gray-300 hover:text-white transition">
