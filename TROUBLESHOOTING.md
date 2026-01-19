@@ -23,7 +23,7 @@ bash start_ml_server.sh
 **Manual:**
 ```bash
 cd f:/client/Optimizer/optimizer
-.venv/Scripts/python.exe src/api/ml_server_fast.py
+.venv/Scripts/python.exe src/api/ml_server.py
 ```
 
 ### Step 2: Verify Server is Running
@@ -81,12 +81,8 @@ If you see CORS errors in console, the ML server needs to restart.
 Look at the terminal where `start_ml_server.bat` is running.
 Should show:
 ```
-==================================================
-  WebOptimizer ML Server Starting...
-  Model: LightGBM (K-means) - 98.47% Accuracy
-  Server: http://localhost:8000
-==================================================
-INFO:     Uvicorn running on http://0.0.0.0:8000
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Application startup complete.
 ```
 
 ### 2. Check Next.js Server

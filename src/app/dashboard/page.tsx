@@ -49,7 +49,7 @@ export default function DashboardPage() {
       console.log('✅ ML server health:', isHealthy);
 
       if (!isHealthy) {
-        throw new Error('ML server is offline. Please start: python src/api/ml_server_fast.py');
+        throw new Error('ML server is offline. Please start: python src/api/ml_server.py');
       }
 
       console.log('🔍 Starting website analysis...');

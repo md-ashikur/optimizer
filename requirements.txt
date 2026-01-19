@@ -7,3 +7,9 @@ matplotlib>=3.6
 seaborn>=0.12
 tensorflow-cpu>=2.12
 scipy>=1.9
+selenium==4.15.2
+chromedriver-autoinstaller>=0.5
+requests>=2.31
+beautifulsoup4>=4.12
+fastapi>=0.109
+uvicorn[standard]>=0.25

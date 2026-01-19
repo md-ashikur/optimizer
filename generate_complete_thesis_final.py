@@ -1332,7 +1332,7 @@ COPY . .
 EXPOSE 8000
 
 # Run FastAPI server
-CMD ["uvicorn", "ml_server_fast:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "ml_server:app", "--host", "0.0.0.0", "--port", "8000"]
 """
 
 add_code_block(doc, docker_code)

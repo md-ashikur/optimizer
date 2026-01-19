@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-FastAPI server for ML model predictions
-Integrates with the best performing LightGBM model
+FastAPI server for ML model predictions.
+Collects live Lighthouse and browser performance metrics to feed the
+pretrained LightGBM classifier, ensuring real recommendations without
+mock data.
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,8 +15,19 @@ from pathlib import Path
 import subprocess
 import json
 from typing import Dict, Any
-import os
 import shutil
+import time
+import urllib.parse
+import os
+
+import chromedriver_autoinstaller
+import requests
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import WebDriverException
 
 app = FastAPI(title="WebOptimizer ML API")
 
@@ -44,33 +57,59 @@ model = None
 scaler = None
 model_type = None
 
-# Try to load Keras model first
-for kp in KERAS_CANDIDATES:
-    if kp.exists():
+# Ensure Chromedriver is available.
+# Prefer explicit env var `CHROMEDRIVER_PATH` to avoid network downloads during startup.
+CHROMEDRIVER_PATH = None
+if 'CHROMEDRIVER_PATH' in os.environ and os.environ.get('CHROMEDRIVER_PATH'):
+    CHROMEDRIVER_PATH = os.environ.get('CHROMEDRIVER_PATH')
+    print(f"Using CHROMEDRIVER_PATH from environment: {CHROMEDRIVER_PATH}")
+else:
+    # Allow disabling the automatic download in restricted networks
+    if os.environ.get('DISABLE_CHROMEDRIVER_AUTOINSTALL'):
+        print("Chromedriver autoinstall disabled via DISABLE_CHROMEDRIVER_AUTOINSTALL")
+        CHROMEDRIVER_PATH = None
+    else:
         try:
-            # Lazy import tensorflow to avoid import if not needed
-            from tensorflow.keras.models import load_model
-            model = load_model(str(kp))
-            model_type = 'keras'
-            print(f"Model loaded successfully from {kp} (Keras)")
+            CHROMEDRIVER_PATH = chromedriver_autoinstaller.install()
+            print(f"Chromedriver installed to: {CHROMEDRIVER_PATH}")
+        except Exception as exc:
+            print(f"Chromedriver autoinstall failed: {exc}")
+            CHROMEDRIVER_PATH = None
+
+# Allow overriding Chrome binary location via env var when needed
+CHROME_PATH = None
+if 'CHROME_PATH' in os.environ:
+    CHROME_PATH = os.environ.get('CHROME_PATH')
+    print(f"Using CHROME_PATH from environment: {CHROME_PATH}")
+
+# Try to load Keras model first
+# Prefer joblib LightGBM model first to avoid importing heavy optional deps like TensorFlow
+LGBM_CANDIDATES = [
+    MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_kmeans_lgbm.joblib',
+]
+for lp in LGBM_CANDIDATES:
+    if lp.exists():
+        try:
+            model = joblib.load(lp)
+            model_type = 'lgbm'
+            print(f"Model loaded successfully from {lp} (joblib)")
             break
         except Exception as e:
-            print(f"Error loading Keras model at {kp}: {e}")
+            print(f"Error loading joblib model at {lp}: {e}")
 
-# If Keras not available, fall back to joblib LightGBM
+# If joblib model not found, attempt Keras model (lazy import of TensorFlow)
 if model is None:
-    LGBM_CANDIDATES = [
-        MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_kmeans_lgbm.joblib',
-    ]
-    for lp in LGBM_CANDIDATES:
-        if lp.exists():
+    for kp in KERAS_CANDIDATES:
+        if kp.exists():
             try:
-                model = joblib.load(lp)
-                model_type = 'lgbm'
-                print(f"Model loaded successfully from {lp} (joblib)")
+                # Lazy import tensorflow to avoid importing unless Keras model is present
+                from tensorflow.keras.models import load_model
+                model = load_model(str(kp))
+                model_type = 'keras'
+                print(f"Model loaded successfully from {kp} (Keras)")
                 break
             except Exception as e:
-                print(f"Error loading joblib model at {lp}: {e}")
+                print(f"Error loading Keras model at {kp}: {e}")
 
 # Load scaler if available
 for sp in SCALER_CANDIDATES:
@@ -92,27 +131,130 @@ class PredictionResponse(BaseModel):
     prediction: Dict[str, Any]
     raw_features: Dict[str, float]
 
+
+def init_driver() -> webdriver.Chrome:
+    """Initialise a headless Chrome driver for collecting navigation timings."""
+    if not CHROMEDRIVER_PATH:
+        raise RuntimeError("Chromedriver not available. Install Google Chrome and ensure chromedriver is on PATH.")
+
+    chrome_options = Options()
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-logging")
+    chrome_options.add_argument("--log-level=3")
+
+    # If a specific Chrome binary is provided, point ChromeOptions to it
+    if CHROME_PATH:
+        try:
+            chrome_options.binary_location = CHROME_PATH
+        except Exception:
+            pass
+
+    service = Service(CHROMEDRIVER_PATH)
+    try:
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+    except WebDriverException as e:
+        raise RuntimeError(
+            f"Failed to start Chrome webdriver: {e}. Ensure chromedriver matches Chrome version and CHROME_PATH (if set) points to the chrome executable."
+        ) from e
+    driver.set_page_load_timeout(60)
+    return driver
+
+
+def _safe_timing_diff(timing: Dict[str, float], end_key: str, start_key: str) -> float:
+    end = timing.get(end_key, 0) or 0
+    start = timing.get(start_key, 0) or 0
+    diff = max(0, end - start)
+    return float(diff)
+
+
+def get_selenium_metrics(url: str) -> Dict[str, float]:
+    """Collect navigation and resource timing metrics via Selenium."""
+    driver = init_driver()
+    metrics: Dict[str, float] = {}
+
+    try:
+        driver.get(url)
+        time.sleep(5)
+
+        timing = driver.execute_script("return window.performance.timing") or {}
+        metrics.update({
+            'Response_time_ms': _safe_timing_diff(timing, 'responseEnd', 'fetchStart'),
+            'Load_time_ms': _safe_timing_diff(timing, 'loadEventEnd', 'navigationStart'),
+            'DOM_Content_Loaded_Time_ms': _safe_timing_diff(timing, 'domContentLoadedEventEnd', 'navigationStart'),
+            'First_byte_TTFB_ms': _safe_timing_diff(timing, 'responseStart', 'requestStart'),
+        })
+
+        metrics['Total_links'] = float(len(driver.find_elements(By.TAG_NAME, 'a')))
+
+        resources = driver.execute_script("return window.performance.getEntriesByType('resource')") or []
+        transfer_sum = 0.0
+        encoded_sum = 0.0
+        for resource in resources:
+            transfer_sum += float(resource.get('transferSize') or 0)
+            encoded_sum += float(resource.get('encodedBodySize') or 0)
+
+        metrics['No_of_requests'] = float(len(resources))
+        metrics['Byte_in_bytes'] = transfer_sum
+        metrics['Page_size_MB'] = round(encoded_sum / (1024 * 1024), 6)
+
+    except Exception as exc:
+        print(f"Error collecting Selenium metrics for {url}: {exc}")
+    finally:
+        driver.quit()
+
+    return metrics
+
 def run_lighthouse(url: str) -> Dict[str, float]:
     """
     Run Lighthouse audit on the URL and extract metrics
     """
-    # Determine how to invoke Lighthouse: prefer direct CLI, fallback to npx if available
+    # Determine how to invoke Lighthouse.
+    # Prefer a local project install at ./node_modules/.bin/lighthouse (handles Windows .cmd)
     base_cmd = None
-    if shutil.which('lighthouse'):
-        base_cmd = ['lighthouse']
-    elif shutil.which('npx'):
-        base_cmd = ['npx', 'lighthouse']
-    else:
+    try:
+        project_root = Path(__file__).resolve().parents[2]
+        local_bin = project_root / 'node_modules' / '.bin'
+        local_exec = None
+        for candidate in ('lighthouse', 'lighthouse.cmd', 'lighthouse.exe'):
+            p = local_bin / candidate
+            if p.exists():
+                local_exec = str(p)
+                break
+        # On Windows prefer npx which handles wrappers correctly
+        if os.name == 'nt' and shutil.which('npx'):
+            base_cmd = ['npx', 'lighthouse']
+        elif local_exec:
+            # On Windows the local bin may be a .cmd wrapper; execute via cmd /c
+            if os.name == 'nt' and Path(local_exec).suffix.lower() in ('.cmd', '.bat', '.ps1'):
+                base_cmd = ['cmd', '/c', str(local_exec)]
+            else:
+                base_cmd = [str(local_exec)]
+        elif shutil.which('lighthouse'):
+            base_cmd = ['lighthouse']
+        elif shutil.which('npx'):
+            base_cmd = ['npx', 'lighthouse']
+        else:
+            raise Exception(
+                "Lighthouse CLI not found. Run `npm install` or `yarn install` in the project root to install Lighthouse locally, or install it globally."
+            )
+    except Exception:
+        # Fallback generic message
         raise Exception(
-            "Lighthouse CLI not found. Install it with `yarn global add lighthouse` or `npm install -g lighthouse`, and ensure the global bin is on PATH."
+            "Lighthouse CLI not found. Run `npm install` or `yarn install` in the project root to install Lighthouse locally, or install it globally."
         )
 
+    # Use remote debugging port to avoid interference with Selenium sessions
+    chrome_flags = '--headless --no-sandbox --disable-gpu --disable-dev-shm-usage --remote-debugging-port=0'
     cmd = base_cmd + [
         str(url),
         '--output=json',
         '--output-path=stdout',
         '--only-categories=performance',
-        '--chrome-flags=--headless',
+        f"--chrome-flags={chrome_flags}",
         '--quiet'
     ]
 
@@ -135,10 +277,14 @@ def run_lighthouse(url: str) -> Dict[str, float]:
         detail = result.stderr or result.stdout or '<no output>'
         raise Exception(f"Lighthouse exited with code {result.returncode}: {detail}")
 
-    data = json.loads(result.stdout)
+    try:
+        data = json.loads(result.stdout)
+    except Exception as ex:
+        raise Exception(f"Failed to parse Lighthouse JSON output. stdout: {result.stdout[:200]} stderr: {result.stderr[:200]}\nException: {ex}") from ex
     audits = data.get('audits', {})
 
     # Extract primary metrics (use 0 if missing)
+    performance_score = data.get('categories', {}).get('performance', {}).get('score')
     metrics = {
         'Largest_contentful_paint_LCP_ms': audits.get('largest-contentful-paint', {}).get('numericValue', 0.0),
         'First_Contentful_Paint_FCP_ms': audits.get('first-contentful-paint', {}).get('numericValue', 0.0),
@@ -148,124 +294,131 @@ def run_lighthouse(url: str) -> Dict[str, float]:
         'Cumulative_Layout_Shift_CLS': audits.get('cumulative-layout-shift', {}).get('numericValue', 0.0),
         'Max_Potential_FID_ms': audits.get('max-potential-fid', {}).get('numericValue', 0.0),
         'Server_Response_Time_ms': audits.get('server-response-time', {}).get('numericValue', 0.0),
+        'Interaction_to_Next_Paint_INP_ms': audits.get('experimental-interaction-to-next-paint', {}).get('numericValue')
+            or audits.get('interaction-to-next-paint', {}).get('numericValue', 0.0),
+        'Design_optimization_score': round((performance_score or 0.0) * 100, 2),
+        'JavaScript_Execution_Time_ms': audits.get('mainthread-work-breakdown', {}).get('numericValue', 0.0),
+        'Main_Thread_Work_CPU_ms': audits.get('total-blocking-time', {}).get('numericValue', 0.0),
+        'CSS_Blocking_Time_ms': audits.get('render-blocking-resources', {}).get('numericValue', 0.0),
     }
 
-    # Derived/simple computed metrics
-    metrics.update({
-        'DOM_Content_Loaded_ms': metrics['First_Contentful_Paint_FCP_ms'] * 1.2,
-        'First_Meaningful_Paint_ms': metrics['Largest_contentful_paint_LCP_ms'] * 0.8,
-        'Fully_Loaded_Time_ms': metrics['Time_to_interactive_TTI_ms'] * 1.1,
-        'Main_Thread_Work_ms': metrics['Total_Blocking_Time_TBT_ms'] * 2,
-        'Bootup_Time_ms': metrics['Time_to_interactive_TTI_ms'] * 0.3,
-    })
+    # Keep legacy metrics used by the frontend visualisations
+    metrics['Main_Thread_Work_ms'] = metrics['Main_Thread_Work_CPU_ms']
+    metrics['Bootup_Time_ms'] = metrics['Time_to_interactive_TTI_ms'] * 0.3
+    metrics['DOM_Content_Loaded_ms'] = metrics['First_Contentful_Paint_FCP_ms']
+    metrics['First_Meaningful_Paint_ms'] = metrics['Largest_contentful_paint_LCP_ms']
+    metrics['Fully_Loaded_Time_ms'] = metrics['Time_to_interactive_TTI_ms']
 
-    # Parse resource-summary for sizes and request counts if available
-    resource_summary = audits.get('resource-summary', {}).get('details', {})
-    total_size_kb = None
-    number_of_requests = None
-    js_kb = css_kb = img_kb = font_kb = html_kb = offscreen_images_kb = 0.0
+    return metrics
 
-    # resource-summary may contain "overallSavingsMs" or "items" depending on LH version
-    items = resource_summary.get('items') if isinstance(resource_summary, dict) else None
-    if items and isinstance(items, list):
-        # items contains dicts with label and size in bytes or KB depending on LH version
-        for it in items:
-            label = it.get('label', '').lower()
-            size = it.get('size', 0)
-            # If size seems like bytes (>100000), convert to KB
-            if size > 100000:
-                size_kb = float(size) / 1024.0
-            else:
-                size_kb = float(size)
 
-            if 'script' in label:
-                js_kb += size_kb
-            elif 'image' in label:
-                img_kb += size_kb
-            elif 'stylesheet' in label or 'css' in label:
-                css_kb += size_kb
-            elif 'font' in label:
-                font_kb += size_kb
-            elif 'document' in label or 'html' in label:
-                html_kb += size_kb
-
-    # Some LH versions store totals in resource-summary.summary
-    totals = resource_summary.get('summary') if isinstance(resource_summary, dict) else None
-    if totals and isinstance(totals, dict):
-        total_size_kb = totals.get('totalBytes')
-        number_of_requests = totals.get('requests')
-        if total_size_kb and total_size_kb > 100000:
-            total_size_kb = float(total_size_kb) / 1024.0
-
-    # Fallbacks if not parsed
-    if total_size_kb is None:
-        total_size_kb = js_kb + css_kb + img_kb + font_kb + html_kb
-    if number_of_requests is None:
-        # Try to get from network-requests audit details
-        details = audits.get('network-requests', {}).get('details', {})
-        if isinstance(details, dict):
-            reqs = details.get('items')
-            if isinstance(reqs, list):
-                number_of_requests = len(reqs)
-    if number_of_requests is None:
-        number_of_requests = 0
-
-    # Try to estimate offscreen images size from image entries marked as offscreen in network-requests
+def get_broken_links(url: str, limit: int = 100) -> float:
     try:
-        net_items = audits.get('network-requests', {}).get('details', {}).get('items', [])
-        for it in net_items:
-            if it.get('resourceType') == 'Image' and it.get('isOffscreen'):
-                size_b = it.get('transferSize') or 0
-                offscreen_images_kb += float(size_b) / 1024.0
-    except Exception:
-        pass
+        response = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
+        response.raise_for_status()
+    except Exception as exc:
+        print(f"Failed to fetch page for broken-link check ({url}): {exc}")
+        return 0.0
 
-    metrics.update({
-        'Total_Page_Size_KB': float(total_size_kb),
-        'Number_of_Requests': int(number_of_requests),
-        'JavaScript_Size_KB': float(js_kb),
-        'CSS_Size_KB': float(css_kb),
-        'Image_Size_KB': float(img_kb),
-        'Font_Size_KB': float(font_kb),
-        'HTML_Size_KB': float(html_kb),
-        'Offscreen_Images_KB': float(offscreen_images_kb),
-    })
+    soup = BeautifulSoup(response.text, 'html.parser')
+    links = [a['href'] for a in soup.find_all('a', href=True)]
+
+    broken = 0
+    for link in links[:limit]:
+        target = link
+        if not target.startswith(('http://', 'https://')):
+            target = urllib.parse.urljoin(url, target)
+        try:
+            resp = requests.head(target, timeout=5, allow_redirects=True)
+            if resp.status_code >= 400:
+                broken += 1
+        except Exception:
+            broken += 1
+
+    return float(broken)
+
+
+def collect_all_metrics(url: str) -> Dict[str, float]:
+    metrics: Dict[str, float] = {}
+
+    try:
+        selenium_metrics = get_selenium_metrics(url)
+        metrics.update(selenium_metrics)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "Selenium setup failed: {0}. Install Google Chrome or set the CHROME_PATH environment variable."
+            .format(exc)
+        ) from exc
+
+    lighthouse_metrics = run_lighthouse(url)
+    metrics.update(lighthouse_metrics)
+
+    metrics['Broken_link_count'] = get_broken_links(url)
+
+    # Align derived values with training dataset naming
+    metrics.setdefault('Start_render_time_ms', metrics.get('First_Contentful_Paint_FCP_ms') or 0.0)
+    metrics.setdefault('Document_complete_time_ms', metrics.get('Load_time_ms') or metrics.get('Time_to_interactive_TTI_ms') or 0.0)
+
+    # Ensure all expected keys exist
+    for key in (
+        'Response_time_ms',
+        'Load_time_ms',
+        'DOM_Content_Loaded_Time_ms',
+        'First_byte_TTFB_ms',
+        'Total_links',
+        'No_of_requests',
+        'Byte_in_bytes',
+        'Page_size_MB',
+        'Largest_contentful_paint_LCP_ms',
+        'Cumulative_Layout_Shift_CLS',
+        'First_Contentful_Paint_FCP_ms',
+        'Time_to_interactive_TTI_ms',
+        'Speed_Index_ms',
+        'Interaction_to_Next_Paint_INP_ms',
+        'Design_optimization_score',
+        'JavaScript_Execution_Time_ms',
+        'Main_Thread_Work_CPU_ms',
+        'CSS_Blocking_Time_ms',
+        'Broken_link_count',
+        'Start_render_time_ms',
+        'Document_complete_time_ms',
+        'Total_Blocking_Time_TBT_ms',
+    ):
+        metrics.setdefault(key, 0.0)
 
     return metrics
 
 def prepare_features(metrics: Dict[str, float]) -> pd.DataFrame:
-    """Prepare features for model prediction and return a single-row DataFrame with named columns.
-
-    Returning a DataFrame preserves feature names so the scaler (fitted with feature names)
-    receives consistent columns and order, avoiding warnings and incorrect transforms.
-    """
-    feature_names = [
-        'Largest_contentful_paint_LCP_ms',
-        'First_Contentful_Paint_FCP_ms',
-        'Time_to_interactive_TTI_ms',
-        'Speed_Index_ms',
-        'Total_Blocking_Time_TBT_ms',
-        'Cumulative_Layout_Shift_CLS',
-        'Max_Potential_FID_ms',
-        'Server_Response_Time_ms',
-        'DOM_Content_Loaded_ms',
-        'First_Meaningful_Paint_ms',
-        'Fully_Loaded_Time_ms',
-        'Total_Page_Size_KB',
-        'Number_of_Requests',
-        'JavaScript_Size_KB',
-        'CSS_Size_KB',
-        'Image_Size_KB',
-        'Font_Size_KB',
-        'HTML_Size_KB',
-        'Main_Thread_Work_ms',
-        'Bootup_Time_ms',
-        'Offscreen_Images_KB'
-    ]
+    """Align collected metrics with the scaler feature order."""
+    if scaler is not None and hasattr(scaler, 'feature_names_in_'):
+        feature_names = list(scaler.feature_names_in_)
+    else:
+        feature_names = [
+            'Response_time_ms',
+            'Load_time_ms',
+            'DOM_Content_Loaded_Time_ms',
+            'First_byte_TTFB_ms',
+            'Total_links',
+            'No_of_requests',
+            'Byte_in_bytes',
+            'Page_size_MB',
+            'Largest_contentful_paint_LCP_ms',
+            'Cumulative_Layout_Shift_CLS',
+            'First_Contentful_Paint_FCP_ms',
+            'Time_to_interactive_TTI_ms',
+            'Speed_Index_ms',
+            'Interaction_to_Next_Paint_INP_ms',
+            'Design_optimization_score',
+            'JavaScript_Execution_Time_ms',
+            'Main_Thread_Work_CPU_ms',
+            'CSS_Blocking_Time_ms',
+            'Broken_link_count',
+            'Start_render_time_ms',
+            'Document_complete_time_ms',
+        ]
 
     row = {name: float(metrics.get(name, 0.0)) for name in feature_names}
-    df = pd.DataFrame([row], columns=feature_names)
-    return df
+    return pd.DataFrame([row], columns=feature_names)
 
 @app.get("/")
 def read_root():
@@ -290,8 +443,8 @@ async def predict(request: PredictionRequest):
         raise HTTPException(status_code=500, detail="Model or scaler not loaded. Ensure models are available and dependencies (tensorflow/sklearn) are installed.")
     
     try:
-        # Get metrics from Lighthouse
-        metrics = run_lighthouse(request.url)
+        target_url = str(request.url)
+        metrics = collect_all_metrics(target_url)
 
         # Prepare features as a named DataFrame so scaler gets correct feature names
         features_df = prepare_features(metrics)

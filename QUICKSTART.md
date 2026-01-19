@@ -18,7 +18,7 @@ source .venv/Scripts/activate  # Git Bash
 .venv\Scripts\activate.bat  # CMD
 
 # Start server
-python src/api/ml_server_fast.py
+python src/api/ml_server.py
 ```
 
 The server will start at `http://localhost:8000`
@@ -64,7 +64,7 @@ Expected response:
 ## 📊 Features
 
 - **Progress Bar**: Shows real-time analysis progress (0-100%)
-- **Fast Response**: Uses optimized mock data (~2-3 seconds)
+- **Real Lighthouse Audits**: Collects live Core Web Vitals for every run
 - **ML Integration**: LightGBM model with 98.47% accuracy
 - **Error Handling**: Automatic ML server health checks
 - **Beautiful UI**: Modern gradient design with react-icons
@@ -76,15 +76,14 @@ Expected response:
 
 **Fix**:
 1. Check if port 8000 is available
-2. Start the ML server: `python src/api/ml_server_fast.py`
+2. Start the ML server: `python src/api/ml_server.py`
 3. Verify with: `curl http://localhost:8000/health`
 
 ### Slow Analysis
-The fast version uses mock realistic data instead of actual Lighthouse audits for development speed.
-
-To use real Lighthouse (slower):
-- Replace `src/api/ml_server_fast.py` with `src/api/ml_server.py`
-- Install Lighthouse: `npm install -g lighthouse`
+Real Lighthouse audits run directly against Chrome. Ensure Google Chrome is installed and consider limiting concurrent requests. Installing Lighthouse globally is required:
+```bash
+npm install -g lighthouse
+```
 
 ### Port Already in Use
 ```bash
@@ -102,8 +101,7 @@ lsof -ti:8000 | xargs kill -9
 ```
 src/
 ├── api/
-│   ├── ml_server_fast.py    # Fast ML server (mock data)
-│   └── ml_server.py         # Full ML server (with Lighthouse)
+│   └── ml_server.py         # ML server collecting live Lighthouse metrics
 ├── app/
 │   ├── page.tsx             # Homepage with input
 │   └── dashboard/
