@@ -37,8 +37,8 @@ export async function analyzeWebsite(
       '/api/analyze',
       { url },
       { 
-        // Increase timeout to 3 minutes to accommodate Lighthouse + Selenium audits
-        timeout: 180000,
+        // Increase timeout to 6 minutes to accommodate Lighthouse + Selenium audits
+        timeout: 360000,
         headers: { 'Content-Type': 'application/json' }
       }
     );
@@ -61,8 +61,27 @@ export async function analyzeWebsite(
       }
       if (error.response) {
         const resp = error.response;
-        const body = resp.data as any;
-        const message = body?.error ?? body?.detail ?? (typeof body === 'string' ? body : JSON.stringify(body || {}));
+        const body: unknown = resp.data;
+
+        let message = '';
+        if (typeof body === 'string') {
+          message = body;
+        } else if (body && typeof body === 'object') {
+          const b = body as Record<string, unknown>;
+          const maybeError = b['error'] ?? b['detail'];
+          if (typeof maybeError === 'string') {
+            message = maybeError;
+          } else {
+            try {
+              message = JSON.stringify(b);
+            } catch (_) {
+              message = String(maybeError ?? resp.statusText ?? resp.status);
+            }
+          }
+        } else {
+          message = String(body);
+        }
+
         throw new Error(`${message} (status ${resp.status})`);
       }
       if (error.request) {

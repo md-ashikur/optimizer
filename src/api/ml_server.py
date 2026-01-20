@@ -19,6 +19,7 @@ import shutil
 import time
 import urllib.parse
 import os
+import tempfile
 
 import chromedriver_autoinstaller
 import requests
@@ -160,7 +161,7 @@ def init_driver() -> webdriver.Chrome:
         raise RuntimeError(
             f"Failed to start Chrome webdriver: {e}. Ensure chromedriver matches Chrome version and CHROME_PATH (if set) points to the chrome executable."
         ) from e
-    driver.set_page_load_timeout(60)
+    driver.set_page_load_timeout(120)
     return driver
 
 
@@ -177,8 +178,12 @@ def get_selenium_metrics(url: str) -> Dict[str, float]:
     metrics: Dict[str, float] = {}
 
     try:
-        driver.get(url)
-        time.sleep(5)
+        try:
+            driver.get(url)
+        except Exception as e:
+            print(f"Warning: driver.get timed out or failed: {e}")
+        # allow more time for large pages to finish loading
+        time.sleep(10)
 
         timing = driver.execute_script("return window.performance.timing") or {}
         metrics.update({
@@ -249,24 +254,45 @@ def run_lighthouse(url: str) -> Dict[str, float]:
 
     # Build chrome flags for Lighthouse; avoid auto remote-debugging port which can be flaky
     chrome_flags = '--headless --no-sandbox --disable-gpu --disable-dev-shm-usage'
+
+    # Prepare a writable temporary user-data dir for Lighthouse to avoid Windows EPERM
+    project_root = Path(__file__).resolve().parents[2]
+    project_tmp_root = project_root / 'tmp_lighthouse'
+    try:
+        project_tmp_root.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        project_tmp_root = Path(tempfile.mkdtemp(prefix='lighthouse_'))
+
+    tmp_user_data = Path(tempfile.mkdtemp(prefix='lighthouse_', dir=str(project_tmp_root)))
+
+    # Add user-data-dir to chrome flags so Lighthouse uses a workspace it can remove
+    chrome_flags_with_profile = f"{chrome_flags} --user-data-dir={str(tmp_user_data)} --no-first-run"
+
     cmd = base_cmd + [
         str(url),
         '--output=json',
         '--output-path=stdout',
         '--only-categories=performance',
-        f"--chrome-flags={chrome_flags}",
+        f"--chrome-flags={chrome_flags_with_profile}",
     ]
 
     # If CHROME_PATH env var provided, pass it to lighthouse CLI
     if CHROME_PATH:
         print(f"Using CHROME_PATH for Lighthouse: {CHROME_PATH}")
         cmd.append(f"--chrome-path={CHROME_PATH}")
-    
+
     # Allow quiet mode still
     cmd.append('--quiet')
 
     # Debug: show the exact command being executed (helps diagnose PATH/wrapper issues)
-    print(f"Running Lighthouse command: {cmd}")
+    print(f"Running Lighthouse command: {cmd} (tmp profile: {tmp_user_data})")
+
+    # Prepare environment ensuring TMP/TEMP point to writable location
+    env = os.environ.copy()
+    env['TMP'] = str(tmp_user_data)
+    env['TEMP'] = str(tmp_user_data)
+    env['TMPDIR'] = str(tmp_user_data)
+
     try:
         if os.name == 'nt':
             # On Windows, run via the shell so .cmd/.bat wrappers execute correctly
@@ -275,27 +301,42 @@ def run_lighthouse(url: str) -> Dict[str, float]:
                 cmd_str,
                 capture_output=True,
                 text=True,
-                timeout=180,
-                shell=True
+                timeout=240,
+                shell=True,
+                env=env
             )
         else:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=180
+                timeout=240,
+                env=env
             )
     except FileNotFoundError as fe:
+        # cleanup
+        try:
+            shutil.rmtree(tmp_user_data)
+        except Exception:
+            pass
         raise Exception(
             "Failed to run Lighthouse: executable not found. Ensure Lighthouse (or npx) is installed and on PATH."
         ) from fe
     except Exception as ex:
+        try:
+            shutil.rmtree(tmp_user_data)
+        except Exception:
+            pass
         raise Exception(f"Failed to run Lighthouse: {ex}") from ex
 
     if result.returncode != 0:
         # Provide stderr/stdout for debugging
         detail = result.stderr or result.stdout or '<no output>'
         print(f"Lighthouse failed. returncode={result.returncode} stderr={result.stderr}")
+        try:
+            shutil.rmtree(tmp_user_data)
+        except Exception:
+            pass
         raise Exception(f"Lighthouse exited with code {result.returncode}: {detail}")
 
     try:
