@@ -37,7 +37,8 @@ export async function analyzeWebsite(
       '/api/analyze',
       { url },
       { 
-        timeout: 90000,
+        // Increase timeout to 3 minutes to accommodate Lighthouse + Selenium audits
+        timeout: 180000,
         headers: { 'Content-Type': 'application/json' }
       }
     );

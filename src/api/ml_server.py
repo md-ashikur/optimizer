@@ -247,24 +247,44 @@ def run_lighthouse(url: str) -> Dict[str, float]:
             "Lighthouse CLI not found. Run `npm install` or `yarn install` in the project root to install Lighthouse locally, or install it globally."
         )
 
-    # Use remote debugging port to avoid interference with Selenium sessions
-    chrome_flags = '--headless --no-sandbox --disable-gpu --disable-dev-shm-usage --remote-debugging-port=0'
+    # Build chrome flags for Lighthouse; avoid auto remote-debugging port which can be flaky
+    chrome_flags = '--headless --no-sandbox --disable-gpu --disable-dev-shm-usage'
     cmd = base_cmd + [
         str(url),
         '--output=json',
         '--output-path=stdout',
         '--only-categories=performance',
         f"--chrome-flags={chrome_flags}",
-        '--quiet'
     ]
 
+    # If CHROME_PATH env var provided, pass it to lighthouse CLI
+    if CHROME_PATH:
+        print(f"Using CHROME_PATH for Lighthouse: {CHROME_PATH}")
+        cmd.append(f"--chrome-path={CHROME_PATH}")
+    
+    # Allow quiet mode still
+    cmd.append('--quiet')
+
+    # Debug: show the exact command being executed (helps diagnose PATH/wrapper issues)
+    print(f"Running Lighthouse command: {cmd}")
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=180
-        )
+        if os.name == 'nt':
+            # On Windows, run via the shell so .cmd/.bat wrappers execute correctly
+            cmd_str = ' '.join(f'"{c}"' if ' ' in c else c for c in cmd)
+            result = subprocess.run(
+                cmd_str,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                shell=True
+            )
+        else:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180
+            )
     except FileNotFoundError as fe:
         raise Exception(
             "Failed to run Lighthouse: executable not found. Ensure Lighthouse (or npx) is installed and on PATH."
@@ -275,6 +295,7 @@ def run_lighthouse(url: str) -> Dict[str, float]:
     if result.returncode != 0:
         # Provide stderr/stdout for debugging
         detail = result.stderr or result.stdout or '<no output>'
+        print(f"Lighthouse failed. returncode={result.returncode} stderr={result.stderr}")
         raise Exception(f"Lighthouse exited with code {result.returncode}: {detail}")
 
     try:
@@ -339,18 +360,31 @@ def get_broken_links(url: str, limit: int = 100) -> float:
 
 
 def collect_all_metrics(url: str) -> Dict[str, float]:
+    # Run Selenium and Lighthouse audits in parallel to reduce wall-clock time
     metrics: Dict[str, float] = {}
 
-    try:
-        selenium_metrics = get_selenium_metrics(url)
-        metrics.update(selenium_metrics)
-    except RuntimeError as exc:
-        raise RuntimeError(
-            "Selenium setup failed: {0}. Install Google Chrome or set the CHROME_PATH environment variable."
-            .format(exc)
-        ) from exc
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    lighthouse_metrics = run_lighthouse(url)
+    tasks = {}
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        tasks['selenium'] = ex.submit(get_selenium_metrics, url)
+        tasks['lighthouse'] = ex.submit(run_lighthouse, url)
+
+        selenium_metrics = {}
+        lighthouse_metrics = {}
+
+        for name, future in list(tasks.items()):
+            try:
+                res = future.result(timeout=120)
+                if name == 'selenium':
+                    selenium_metrics = res or {}
+                else:
+                    lighthouse_metrics = res or {}
+            except Exception as exc:
+                print(f"Metric collection task '{name}' failed: {exc}")
+
+    # Merge whatever succeeded; at minimum we'll still attempt broken-link checks
+    metrics.update(selenium_metrics)
     metrics.update(lighthouse_metrics)
 
     metrics['Broken_link_count'] = get_broken_links(url)

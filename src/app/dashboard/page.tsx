@@ -33,7 +33,7 @@ export default function DashboardPage() {
     const target = urlOverride ?? currentUrl;
     if (!target) return;
 
-    console.log('🚀 Starting analysis for:', currentUrl);
+    console.log('Starting analysis for:', currentUrl);
     setAnalyzing(true);
     setError(null);
     setProgress(0);
@@ -41,20 +41,20 @@ export default function DashboardPage() {
 
     try {
       // Check ML server health first
-      console.log('📡 Checking ML server health...');
+      console.log('Checking ML server health...');
       setProgress(5);
       setProgressMessage('Checking ML server...');
 
       const isHealthy = await checkMLServerHealth();
-      console.log('✅ ML server health:', isHealthy);
+      console.log('ML server health:', isHealthy);
 
       if (!isHealthy) {
         throw new Error('ML server is offline. Please start: python src/api/ml_server.py');
       }
 
-      console.log('🔍 Starting website analysis...');
+      console.log('Starting website analysis...');
       const result = await analyzeWebsite(target, (prog, msg) => {
-        console.log(`📊 Progress: ${prog}% - ${msg}`);
+        console.log(`Progress: ${prog}% - ${msg}`);
         setProgress(prog);
         setProgressMessage(msg);
       });
@@ -62,7 +62,7 @@ export default function DashboardPage() {
       console.log('✨ Analysis complete:', result);
       setAnalysisResult(result);
     } catch (err) {
-      console.error('❌ Analysis error:', err);
+      console.error('Analysis error:', err);
       setError(err instanceof Error ? err.message : 'Analysis failed');
     } finally {
       setAnalyzing(false);
@@ -135,7 +135,6 @@ export default function DashboardPage() {
               <ExtraFeaturesPanel result={analysisResult} />
             </div>
 
-            {/* Bottom action removed — moved to header */}
           </div>
         </div>
       </main>

@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
             parsedErr = respText ? JSON.parse(respText) : null;
           } catch (e) {
             // leave parsedErr null
+            console.log('Error parsing JSON error response:', e);
           }
 
           const detail = (typeof parsedErr === 'object' && parsedErr !== null && ('detail' in parsedErr || 'error' in parsedErr))
