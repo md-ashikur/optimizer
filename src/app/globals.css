@@ -32,6 +32,18 @@
   animation: shimmer 2s infinite;
 }
 
+.delay-100 {
+  animation-delay: 0.1s;
+}
+
+.delay-200 {
+  animation-delay: 0.2s;
+}
+
+.delay-1000 {
+  animation-delay: 1s;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

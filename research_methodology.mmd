@@ -1,0 +1,63 @@
+flowchart TB
+    Start([Research Start]) --> Problem[Problem Definition:<br/>Website Performance<br/>Analysis & Prediction]
+    
+    Problem --> DataCollection[Data Collection Phase]
+    
+    DataCollection --> DC1[Selenium WebDriver<br/>Navigation Timing API]
+    DataCollection --> DC2[Lighthouse CLI<br/>Performance Audits]
+    DataCollection --> DC3[Broken Links Analysis<br/>BeautifulSoup]
+    
+    DC1 --> Metrics1[Response Time<br/>Load Time<br/>DOM Content Loaded<br/>TTFB]
+    DC2 --> Metrics2[Core Web Vitals<br/>LCP, FCP, CLS, INP<br/>Performance Score]
+    DC3 --> Metrics3[Link Quality<br/>Metrics]
+    
+    Metrics1 --> DataPrep[Data Preparation<br/>& Feature Engineering]
+    Metrics2 --> DataPrep
+    Metrics3 --> DataPrep
+    
+    DataPrep --> Features[22 Performance Features<br/>Extracted & Normalized]
+    
+    Features --> Labeling{Labeling Strategy}
+    
+    Labeling --> KMeans[K-Means Clustering<br/>Pattern-Based Labels]
+    Labeling --> Tertiles[Composite Score Tertiles<br/>Threshold-Based Labels]
+    
+    KMeans --> Labels[Performance Labels:<br/>Good / Average / Weak]
+    Tertiles --> Labels
+    
+    Labels --> Split[Train/Test Split<br/>80/20 Ratio]
+    
+    Split --> Training[Model Training Phase]
+    
+    Training --> LGBM[LightGBM Classifier<br/>Gradient Boosting]
+    Training --> Keras[Deep Neural Network<br/>Keras/TensorFlow]
+    
+    LGBM --> Tuning[Hyperparameter Tuning<br/>Cross-Validation]
+    Keras --> Tuning
+    
+    Tuning --> Evaluation[Model Evaluation]
+    
+    Evaluation --> Metrics[Performance Metrics:<br/>Accuracy, Precision<br/>Recall, F1-Score]
+    
+    Metrics --> Validation[Model Validation<br/>Confusion Matrix<br/>SHAP Analysis]
+    
+    Validation --> Selection[Model Selection<br/>K-Means LGBM:<br/>Best Accuracy]
+    
+    Selection --> Deployment[Production Deployment]
+    
+    Deployment --> API[FastAPI Server<br/>Real-time Predictions]
+    
+    API --> Frontend[Next.js Dashboard<br/>User Interface]
+    
+    Frontend --> Results[Performance Analysis<br/>Recommendations<br/>Insights]
+    
+    Results --> End([Research Complete])
+    
+    style Start fill:#e1f5e1
+    style Problem fill:#fff3cd
+    style DataCollection fill:#cfe2ff
+    style Features fill:#f8d7da
+    style Labels fill:#d1ecf1
+    style Selection fill:#d4edda
+    style Results fill:#d1ecf1
+    style End fill:#e1f5e1

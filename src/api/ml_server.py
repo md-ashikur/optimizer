@@ -7,6 +7,7 @@ mock data.
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, HttpUrl
 import joblib
 import numpy as np
@@ -14,12 +15,13 @@ import pandas as pd
 from pathlib import Path
 import subprocess
 import json
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator
 import shutil
 import time
 import urllib.parse
 import os
 import tempfile
+import asyncio
 
 import chromedriver_autoinstaller
 import requests
@@ -41,16 +43,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load the best model (LightGBM with K-means labeling)
+# Load the best model (LightGBM with K-means clustering - best performance)
 MODEL_DIR = Path(__file__).parent.parent / 'ML-data'
-# possible model locations (project contains multiple outputs during training)
+# K-means clustering provides best results according to training metrics
 KERAS_CANDIDATES = [
-    MODEL_DIR / 'Code' / 'output' / 'model_keras.h5',
     MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_kmeans_keras.h5',
     MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_tertiles_keras.h5',
+    MODEL_DIR / 'Code' / 'output' / 'model_keras.h5',
 ]
 SCALER_CANDIDATES = [
     MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_kmeans_scaler.joblib',
+    MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_tertiles_scaler.joblib',
     MODEL_DIR / 'Code' / 'output' / 'scaler.joblib',
 ]
 
@@ -78,22 +81,54 @@ else:
             CHROMEDRIVER_PATH = None
 
 # Allow overriding Chrome binary location via env var when needed
+# Load .env from project root if present (simple parser, avoids adding dependencies)
+project_root = Path(__file__).resolve().parents[2]
+env_file = project_root / '.env'
+if env_file.exists():
+    print(f"Loading environment variables from {env_file}")
+    try:
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' in line:
+                k, v = line.split('=', 1)
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                # Do not override already-set environment variables
+                os.environ.setdefault(k, v)
+    except Exception as e:
+        print(f"Failed to load .env file {env_file}: {e}")
+
 CHROME_PATH = None
-if 'CHROME_PATH' in os.environ:
+if 'CHROME_PATH' in os.environ and os.environ.get('CHROME_PATH'):
     CHROME_PATH = os.environ.get('CHROME_PATH')
     print(f"Using CHROME_PATH from environment: {CHROME_PATH}")
 
 # Try to load Keras model first
 # Prefer joblib LightGBM model first to avoid importing heavy optional deps like TensorFlow
+# K-means model first - provides best accuracy on test data
 LGBM_CANDIDATES = [
     MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_kmeans_lgbm.joblib',
+    MODEL_DIR / '4_Trained_Models' / 'classification_models' / 'label_tertiles_lgbm.joblib',
 ]
 for lp in LGBM_CANDIDATES:
     if lp.exists():
         try:
             model = joblib.load(lp)
             model_type = 'lgbm'
-            print(f"Model loaded successfully from {lp} (joblib)")
+            model_name = 'K-MEANS' if 'kmeans' in str(lp).lower() else 'TERTILES'
+            print(f"\n{'='*70}")
+            print(f"✅ Model loaded successfully: {model_name}")
+            print(f"   Path: {lp}")
+            print(f"   Type: LightGBM (joblib)")
+            if 'kmeans' in str(lp).lower():
+                print(f"   Labeling: K-means clustering on features")
+                print(f"   - Clusters websites by performance patterns")
+                print(f"   - Best accuracy on test data")
+            else:
+                print(f"   Labeling: Based on composite_score thresholds")
+            print(f"{'='*70}\n")
             break
         except Exception as e:
             print(f"Error loading joblib model at {lp}: {e}")
@@ -252,28 +287,15 @@ def run_lighthouse(url: str) -> Dict[str, float]:
             "Lighthouse CLI not found. Run `npm install` or `yarn install` in the project root to install Lighthouse locally, or install it globally."
         )
 
-    # Build chrome flags for Lighthouse; avoid auto remote-debugging port which can be flaky
+    # Build chrome flags for Lighthouse; let Lighthouse manage its own temp to avoid EPERM
     chrome_flags = '--headless --no-sandbox --disable-gpu --disable-dev-shm-usage'
-
-    # Prepare a writable temporary user-data dir for Lighthouse to avoid Windows EPERM
-    project_root = Path(__file__).resolve().parents[2]
-    project_tmp_root = project_root / 'tmp_lighthouse'
-    try:
-        project_tmp_root.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        project_tmp_root = Path(tempfile.mkdtemp(prefix='lighthouse_'))
-
-    tmp_user_data = Path(tempfile.mkdtemp(prefix='lighthouse_', dir=str(project_tmp_root)))
-
-    # Add user-data-dir to chrome flags so Lighthouse uses a workspace it can remove
-    chrome_flags_with_profile = f"{chrome_flags} --user-data-dir={str(tmp_user_data)} --no-first-run"
 
     cmd = base_cmd + [
         str(url),
         '--output=json',
         '--output-path=stdout',
         '--only-categories=performance',
-        f"--chrome-flags={chrome_flags_with_profile}",
+        f"--chrome-flags={chrome_flags}",
     ]
 
     # If CHROME_PATH env var provided, pass it to lighthouse CLI
@@ -285,59 +307,68 @@ def run_lighthouse(url: str) -> Dict[str, float]:
     cmd.append('--quiet')
 
     # Debug: show the exact command being executed (helps diagnose PATH/wrapper issues)
-    print(f"Running Lighthouse command: {cmd} (tmp profile: {tmp_user_data})")
+    print(f"Running Lighthouse command: {cmd}")
 
-    # Prepare environment ensuring TMP/TEMP point to writable location
-    env = os.environ.copy()
-    env['TMP'] = str(tmp_user_data)
-    env['TEMP'] = str(tmp_user_data)
-    env['TMPDIR'] = str(tmp_user_data)
-
-    try:
-        if os.name == 'nt':
-            # On Windows, run via the shell so .cmd/.bat wrappers execute correctly
-            cmd_str = ' '.join(f'"{c}"' if ' ' in c else c for c in cmd)
-            result = subprocess.run(
-                cmd_str,
-                capture_output=True,
-                text=True,
-                timeout=240,
-                shell=True,
-                env=env
-            )
-        else:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=240,
-                env=env
-            )
-    except FileNotFoundError as fe:
-        # cleanup
+    # Retry logic for flaky network connections (status 499 errors)
+    max_retries = 2
+    last_error = None
+    
+    for attempt in range(max_retries):
         try:
-            shutil.rmtree(tmp_user_data)
-        except Exception:
-            pass
-        raise Exception(
-            "Failed to run Lighthouse: executable not found. Ensure Lighthouse (or npx) is installed and on PATH."
-        ) from fe
-    except Exception as ex:
-        try:
-            shutil.rmtree(tmp_user_data)
-        except Exception:
-            pass
-        raise Exception(f"Failed to run Lighthouse: {ex}") from ex
-
-    if result.returncode != 0:
-        # Provide stderr/stdout for debugging
-        detail = result.stderr or result.stdout or '<no output>'
-        print(f"Lighthouse failed. returncode={result.returncode} stderr={result.stderr}")
-        try:
-            shutil.rmtree(tmp_user_data)
-        except Exception:
-            pass
-        raise Exception(f"Lighthouse exited with code {result.returncode}: {detail}")
+            if os.name == 'nt':
+                # On Windows, run via the shell so .cmd/.bat wrappers execute correctly
+                cmd_str = ' '.join(f'"{c}"' if ' ' in c else c for c in cmd)
+                result = subprocess.run(
+                    cmd_str,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # Increased timeout to 5 minutes
+                    shell=True
+                )
+            else:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+            
+            # Check for specific error codes that should be retried
+            if result.returncode != 0:
+                detail = result.stderr or result.stdout or '<no output>'
+                
+                # Status 499 = client closed connection, often due to timeout - retry
+                # Status 500+ = server errors - might be temporary, retry
+                if 'Status code: 499' in detail or 'Status code: 5' in detail:
+                    if attempt < max_retries - 1:
+                        print(f"Lighthouse attempt {attempt + 1} failed with retriable error, retrying...")
+                        time.sleep(2)  # Brief delay before retry
+                        continue
+                
+                print(f"Lighthouse failed. returncode={result.returncode} stderr={result.stderr}")
+                raise Exception(f"Lighthouse exited with code {result.returncode}: {detail}")
+            
+            # Success - break out of retry loop
+            break
+            
+        except subprocess.TimeoutExpired:
+            last_error = "Lighthouse timed out after 5 minutes"
+            if attempt < max_retries - 1:
+                print(f"Lighthouse attempt {attempt + 1} timed out, retrying...")
+                time.sleep(2)
+                continue
+            raise Exception(last_error)
+        except FileNotFoundError as fe:
+            raise Exception(
+                "Failed to run Lighthouse: executable not found. Ensure Lighthouse (or npx) is installed and on PATH."
+            ) from fe
+        except Exception as ex:
+            last_error = str(ex)
+            if attempt < max_retries - 1:
+                print(f"Lighthouse attempt {attempt + 1} failed: {ex}, retrying...")
+                time.sleep(2)
+                continue
+            raise Exception(f"Failed to run Lighthouse after {max_retries} attempts: {ex}") from ex
 
     try:
         data = json.loads(result.stdout)
@@ -497,47 +528,88 @@ def prepare_features(metrics: Dict[str, float]) -> pd.DataFrame:
 
 @app.get("/")
 def read_root():
+    model_desc = "K-means clustering" if model is not None else "not loaded"
     return {
         "service": "WebOptimizer ML API",
-        "model": "LightGBM (K-means labeling)",
-        "accuracy": "98.47%",
+        "model": f"{model_type} ({model_desc})" if model_type else "not loaded",
+        "accuracy": "98.47% on test data",
         "status": "ready" if model is not None else "model not loaded"
     }
 
 @app.get("/health")
 def health_check():
+    # Scaler is only required for Keras models, not for LightGBM/RF
+    scaler_required = model_type == 'keras'
     return {
         "status": "healthy",
         "model_loaded": model is not None,
-        "scaler_loaded": scaler is not None
+        "model_type": model_type,
+        "scaler_loaded": scaler is not None,
+        "scaler_required": scaler_required
     }
 
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
-    if model is None or scaler is None:
-        raise HTTPException(status_code=500, detail="Model or scaler not loaded. Ensure models are available and dependencies (tensorflow/sklearn) are installed.")
+# Global progress tracking
+analysis_progress = {}
+
+async def stream_progress(url: str) -> AsyncGenerator[str, None]:
+    """Stream analysis progress updates as Server-Sent Events"""
+    task_id = url
+    analysis_progress[task_id] = {"stage": "starting", "progress": 0, "message": "Initializing..."}
     
     try:
-        target_url = str(request.url)
-        metrics = collect_all_metrics(target_url)
-
-        # Prepare features as a named DataFrame so scaler gets correct feature names
+        # Stage 1: Starting
+        yield f"data: {json.dumps({'progress': 5, 'message': 'Starting analysis...'})}\n\n"
+        await asyncio.sleep(0.5)
+        
+        # Stage 2: Selenium metrics
+        analysis_progress[task_id] = {"stage": "selenium", "progress": 15, "message": "Launching headless browser..."}
+        yield f"data: {json.dumps({'progress': 15, 'message': 'Launching headless browser...'})}\n\n"
+        
+        # Collect metrics with progress updates
+        def update_progress(stage, progress, message):
+            analysis_progress[task_id] = {"stage": stage, "progress": progress, "message": message}
+        
+        # Run collection in executor to avoid blocking
+        loop = asyncio.get_event_loop()
+        
+        # Selenium stage
+        yield f"data: {json.dumps({'progress': 20, 'message': 'Collecting navigation timings...'})}\n\n"
+        selenium_metrics = await loop.run_in_executor(None, get_selenium_metrics, url)
+        
+        yield f"data: {json.dumps({'progress': 40, 'message': 'Running Lighthouse audit...'})}\n\n"
+        
+        # Lighthouse stage - this takes the longest
+        yield f"data: {json.dumps({'progress': 45, 'message': 'Analyzing page performance...'})}\n\n"
+        lighthouse_metrics = await loop.run_in_executor(None, run_lighthouse, url)
+        
+        yield f"data: {json.dumps({'progress': 75, 'message': 'Scanning for broken links...'})}\n\n"
+        broken_links = await loop.run_in_executor(None, get_broken_links, url)
+        
+        # Merge metrics
+        metrics = {**selenium_metrics, **lighthouse_metrics}
+        metrics['Broken_link_count'] = broken_links
+        
+        # Add derived metrics
+        metrics.setdefault('Start_render_time_ms', metrics.get('First_Contentful_Paint_FCP_ms') or 0.0)
+        metrics.setdefault('Document_complete_time_ms', metrics.get('Load_time_ms') or metrics.get('Time_to_interactive_TTI_ms') or 0.0)
+        
+        yield f"data: {json.dumps({'progress': 85, 'message': 'Running ML prediction...'})}\n\n"
+        
+        # Prepare features and make prediction
         features_df = prepare_features(metrics)
-
-        # If scaler was fitted with feature names, ensure DataFrame has the same columns/order
-        if hasattr(scaler, 'feature_names_in_'):
+        
+        if scaler is not None and hasattr(scaler, 'feature_names_in_'):
             expected = list(scaler.feature_names_in_)
             for col in expected:
                 if col not in features_df.columns:
                     features_df[col] = 0.0
             features_df = features_df[expected]
-
-        # Scale features
-        features_scaled = scaler.transform(features_df)
-
-        # Make prediction depending on model type
+        
+        # Make prediction
         if model_type == 'keras':
-            # Keras expects float32
+            if scaler is None:
+                raise HTTPException(status_code=500, detail="Keras model requires scaler but scaler not loaded.")
+            features_scaled = scaler.transform(features_df)
             features_in = features_scaled.astype('float32')
             proba = model.predict(features_in)
             proba = np.asarray(proba).reshape(-1)
@@ -546,11 +618,103 @@ async def predict(request: PredictionRequest):
             predicted_label = LABEL_ORDER[prediction_idx]
             confidence = float(proba[prediction_idx])
         else:
-            # joblib model (LightGBM or sklearn)
-            prediction_idx = model.predict(features_scaled)[0]
+            prediction_idx = model.predict(features_df)[0]
+            if hasattr(model, 'predict_proba'):
+                prediction_proba = model.predict_proba(features_df)[0]
+            else:
+                probs = np.zeros(len(LABEL_ORDER), dtype=float)
+                probs[int(prediction_idx)] = 1.0
+                prediction_proba = probs
+            predicted_label = LABEL_ORDER[int(prediction_idx)]
+            confidence = float(prediction_proba[int(prediction_idx)])
+        
+        yield f"data: {json.dumps({'progress': 95, 'message': 'Processing results...'})}\n\n"
+        
+        # Build response
+        result = {
+            "metrics": metrics,
+            "prediction": {
+                "label": predicted_label,
+                "confidence": confidence,
+                "probabilities": {
+                    label: float(prob)
+                    for label, prob in zip(LABEL_ORDER, prediction_proba)
+                }
+            },
+            "raw_features": {k: float(v) for k, v in metrics.items()}
+        }
+        
+        yield f"data: {json.dumps({'progress': 100, 'message': 'Complete!', 'result': result})}\n\n"
+        
+    except Exception as e:
+        error_msg = str(e)
+        yield f"data: {json.dumps({'error': error_msg})}\n\n"
+    finally:
+        # Cleanup
+        if task_id in analysis_progress:
+            del analysis_progress[task_id]
+
+@app.get("/predict-stream")
+async def predict_stream(url: str):
+    """Stream real-time progress updates during analysis"""
+    return StreamingResponse(
+        stream_progress(url),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest):
+    if model is None:
+        raise HTTPException(status_code=500, detail="Model not loaded. Ensure models are available and dependencies are installed.")
+    if model_type == 'keras' and scaler is None:
+        raise HTTPException(status_code=500, detail="Keras model requires scaler but scaler not loaded.")
+    
+    try:
+        target_url = str(request.url)
+        print(f"Starting prediction for: {target_url}")
+        metrics = collect_all_metrics(target_url)
+        print(f"Metrics collected successfully for: {target_url}")
+
+        # Prepare features as a named DataFrame so model/scaler gets correct feature names
+        features_df = prepare_features(metrics)
+
+        # If scaler was fitted with feature names, ensure DataFrame has the same columns/order
+        if scaler is not None and hasattr(scaler, 'feature_names_in_'):
+            expected = list(scaler.feature_names_in_)
+            for col in expected:
+                if col not in features_df.columns:
+                    features_df[col] = 0.0
+            features_df = features_df[expected]
+        else:
+            # Fallback: ensure features_df has column names set even if scaler has none
+            if not hasattr(features_df, 'columns') or len(features_df.columns) == 0:
+                features_df.columns = features_df.columns.astype(str)
+
+        # Make prediction depending on model type
+        # IMPORTANT: Only Keras models use the scaler. LightGBM/RF were trained on unscaled data.
+        if model_type == 'keras':
+            if scaler is None:
+                raise HTTPException(status_code=500, detail="Keras model requires scaler but scaler not loaded.")
+            # Scale features for Keras (pass DataFrame to preserve feature names)
+            features_scaled = scaler.transform(features_df)
+            features_in = features_scaled.astype('float32')
+            proba = model.predict(features_in)
+            proba = np.asarray(proba).reshape(-1)
+            prediction_idx = int(np.argmax(proba))
+            prediction_proba = proba
+            predicted_label = LABEL_ORDER[prediction_idx]
+            confidence = float(proba[prediction_idx])
+        else:
+            # LightGBM/RandomForest models were trained on RAW (unscaled) features
+            # Do NOT apply scaler here!
+            prediction_idx = model.predict(features_df)[0]
             # Some sklearn models provide predict_proba
             if hasattr(model, 'predict_proba'):
-                prediction_proba = model.predict_proba(features_scaled)[0]
+                prediction_proba = model.predict_proba(features_df)[0]
             else:
                 # Fallback: one-hot based on prediction
                 probs = np.zeros(len(LABEL_ORDER), dtype=float)
@@ -560,7 +724,7 @@ async def predict(request: PredictionRequest):
             predicted_label = LABEL_ORDER[int(prediction_idx)]
             confidence = float(prediction_proba[int(prediction_idx)])
         
-        return PredictionResponse(
+        response = PredictionResponse(
             metrics=metrics,
             prediction={
                 "label": predicted_label,
@@ -572,8 +736,16 @@ async def predict(request: PredictionRequest):
             },
             raw_features={k: float(v) for k, v in metrics.items()}
         )
+        print(f"Prediction completed successfully for: {target_url}")
+        return response
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
+        print(f"Prediction error for {target_url}: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 if __name__ == "__main__":
