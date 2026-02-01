@@ -81,6 +81,12 @@ async function analyzeWithStreaming(
   url: string,
   onProgress?: (progress: number, message: string) => void
 ): Promise<AnalysisResult> {
+  // Streaming is currently disabled - use fallback instead
+  // This ensures recommendations and issues are generated via /api/analyze route
+  console.log('Streaming not available, using standard analysis');
+  throw new Error('Streaming disabled, using fallback');
+  
+  /*
   return new Promise((resolve, reject) => {
     let resolved = false;
     const eventSource = new EventSource(
@@ -169,6 +175,7 @@ async function analyzeWithStreaming(
       originalReject(reason);
     };
   });
+  */
 }
 
 async function analyzeWithFallback(
@@ -190,7 +197,7 @@ async function analyzeWithFallback(
     { progress: 85, message: 'Running ML prediction...' },
   ];
 
-  // Start the actual request
+  // Start the actual request to Next.js API route (which calls Python and adds recommendations/issues)
   console.log('Sending request to /api/analyze with URL:', url);
   const requestPromise = axios.post<AnalysisResult>(
     '/api/analyze',

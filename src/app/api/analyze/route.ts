@@ -124,12 +124,14 @@ export async function POST(request: NextRequest) {
       url,
       metrics: data.metrics,
       prediction: data.prediction,
-      recommendations,
-      issues,
+      recommendations: recommendations.length > 0 ? recommendations : ['Your website performance is being analyzed. Specific recommendations will appear based on the metrics.'],
+      issues: issues.length > 0 ? issues : [],
       score,
     };
 
-    console.log('Sending final result');
+    console.log('Sending final result with', recommendations.length, 'recommendations and', issues.length, 'issues');
+    console.log('Recommendations:', recommendations);
+    console.log('Issues:', issues);
     return NextResponse.json(result);
   } catch (error) {
     console.error('Analysis error:', error);
@@ -142,6 +144,16 @@ export async function POST(request: NextRequest) {
 
 function generateRecommendations(metrics: PerformanceMetrics, label: string): string[] {
   const recommendations: string[] = [];
+
+  console.log('Generating recommendations for metrics:', {
+    LCP: metrics.Largest_contentful_paint_LCP_ms,
+    FCP: metrics.First_Contentful_Paint_FCP_ms,
+    TTI: metrics.Time_to_interactive_TTI_ms,
+    CLS: metrics.Cumulative_Layout_Shift_CLS,
+    TBT: metrics.Total_Blocking_Time_TBT_ms,
+    Speed_Index: metrics.Speed_Index_ms,
+    label
+  });
 
   if (metrics.Largest_contentful_paint_LCP_ms > 2500) {
     recommendations.push(
@@ -205,6 +217,8 @@ function generateRecommendations(metrics: PerformanceMetrics, label: string): st
 
 function identifyIssues(metrics: PerformanceMetrics): PerformanceIssue[] {
   const issues: PerformanceIssue[] = [];
+
+  console.log('Identifying issues for metrics:', metrics);
 
   // High severity issues
   if (metrics.Largest_contentful_paint_LCP_ms > 4000) {
