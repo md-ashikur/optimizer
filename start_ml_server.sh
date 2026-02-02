@@ -10,4 +10,9 @@ echo "Press Ctrl+C to stop the server"
 echo ""
 
 cd "$(dirname "$0")"
-.venv/Scripts/python.exe src/api/ml_server_fast.py
+PYTHON=".venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+	PYTHON=".venv/Scripts/python.exe"
+fi
+
+"$PYTHON" src/api/ml_server.py

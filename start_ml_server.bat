@@ -10,6 +10,6 @@ echo Press Ctrl+C to stop the server
 echo.
 
 cd /d "%~dp0"
-.venv\Scripts\python.exe src\api\ml_server_fast.py
+.venv\Scripts\python.exe src\api\ml_server.py
 
 pause

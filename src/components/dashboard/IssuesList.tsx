@@ -7,18 +7,20 @@ interface IssuesListProps {
 }
 
 export default function IssuesList({ issues }: IssuesListProps) {
+  const safeIssues = issues || [];
+  
   return (
     <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-8">
       <h2 className="text-2xl font-bold text-white mb-6">Issues Detected</h2>
       
       <div className="space-y-4">
-        {issues.length === 0 ? (
+        {safeIssues.length === 0 ? (
           <div className="text-center py-8 text-gray-400">
             <HiInformationCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
             <p>No critical issues detected</p>
           </div>
         ) : (
-          issues.map((issue, index) => {
+          safeIssues.map((issue, index) => {
             const config = getSeverityConfig(issue.severity);
             return (
               <div

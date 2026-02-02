@@ -49,56 +49,41 @@ export async function POST(request: NextRequest) {
     for (const candidate of candidates) {
       try {
         console.log('Attempting Python service at:', candidate);
+        const resp = await fetch(`${candidate}/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
 
-        // Try /predict first (ml_server.py basic), then /api/predict (ml_server_advanced.py)
-        const endpoints = [
-          `${candidate.replace(/\/$/, '')}/predict`
-        ];
+        const respText = await resp.text();
+        console.log('Response from', candidate, 'status:', resp.status, 'length:', respText?.length ?? 0);
 
-        let respText: string | null = null;
-        let parsed: unknown = null;
-        let success = false;
-
-        for (const ep of endpoints) {
+        // If response is not OK, attempt to parse structured JSON error payload
+        if (!resp.ok) {
+          let parsedErr: unknown = null;
           try {
-            console.log('Trying endpoint:', ep);
-            const r = await fetch(ep, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url }),
-            });
-
-            const text = await r.text();
-            console.log('Response from', ep, 'status:', r.status, 'length:', text?.length ?? 0);
-
-            if (!r.ok) {
-              console.error(`Endpoint ${ep} returned ${r.status}: ${text}`);
-              continue; // try next endpoint
-            }
-
-            // parse JSON
-            try {
-              parsed = text ? JSON.parse(text) : {};
-              respText = text;
-              success = true;
-              break;
-            } catch (err) {
-              console.error(`Failed to parse JSON from ${ep}:`, err);
-              continue; // try next endpoint
-            }
+            parsedErr = respText ? JSON.parse(respText) : null;
           } catch (e) {
-            console.error('Request to', ep, 'failed:', e);
-            continue; // try next endpoint
+            // leave parsedErr null
+            console.log('Error parsing JSON error response:', e);
           }
-        }
 
-        if (!success) {
-          lastError = `All endpoints for ${candidate} failed or returned non-JSON responses`;
+          const detail = (typeof parsedErr === 'object' && parsedErr !== null && ('detail' in parsedErr || 'error' in parsedErr))
+            ? ((parsedErr as Record<string, unknown>)['detail'] ?? (parsedErr as Record<string, unknown>)['error'])
+            : respText;
+          lastError = `Endpoint ${candidate} returned ${resp.status}: ${detail}`;
           console.error(lastError);
           continue; // try next candidate
         }
 
-        data = parsed;
+        try {
+          data = respText ? JSON.parse(respText) : {};
+        } catch (err) {
+          lastError = `Failed to parse JSON from ${candidate}: ${String(err)} -- raw: ${respText}`;
+          console.error(lastError);
+          continue; // try next candidate
+        }
+
         const keys = typeof data === 'object' && data !== null ? Object.keys(data as Record<string, unknown>) : [];
         console.log('Received prediction data keys from', candidate, ':', keys);
         lastError = null;
@@ -139,12 +124,14 @@ export async function POST(request: NextRequest) {
       url,
       metrics: data.metrics,
       prediction: data.prediction,
-      recommendations,
-      issues,
+      recommendations: recommendations.length > 0 ? recommendations : ['Your website performance is being analyzed. Specific recommendations will appear based on the metrics.'],
+      issues: issues.length > 0 ? issues : [],
       score,
     };
 
-    console.log('Sending final result');
+    console.log('Sending final result with', recommendations.length, 'recommendations and', issues.length, 'issues');
+    console.log('Recommendations:', recommendations);
+    console.log('Issues:', issues);
     return NextResponse.json(result);
   } catch (error) {
     console.error('Analysis error:', error);
@@ -157,6 +144,16 @@ export async function POST(request: NextRequest) {
 
 function generateRecommendations(metrics: PerformanceMetrics, label: string): string[] {
   const recommendations: string[] = [];
+
+  console.log('Generating recommendations for metrics:', {
+    LCP: metrics.Largest_contentful_paint_LCP_ms,
+    FCP: metrics.First_Contentful_Paint_FCP_ms,
+    TTI: metrics.Time_to_interactive_TTI_ms,
+    CLS: metrics.Cumulative_Layout_Shift_CLS,
+    TBT: metrics.Total_Blocking_Time_TBT_ms,
+    Speed_Index: metrics.Speed_Index_ms,
+    label
+  });
 
   if (metrics.Largest_contentful_paint_LCP_ms > 2500) {
     recommendations.push(
@@ -220,6 +217,8 @@ function generateRecommendations(metrics: PerformanceMetrics, label: string): st
 
 function identifyIssues(metrics: PerformanceMetrics): PerformanceIssue[] {
   const issues: PerformanceIssue[] = [];
+
+  console.log('Identifying issues for metrics:', metrics);
 
   // High severity issues
   if (metrics.Largest_contentful_paint_LCP_ms > 4000) {
